@@ -210,10 +210,8 @@ class SocketGoBackN:
                 fin = packet.fin
             else:
                 logger.debug(f'{addr} - {Packet.from_bytes(data)} - IGNORED')
-            import random
             
-            if random.randrange(0,3) == 1:
-                self.socket.sendto(Packet(ack=True, seq=self.sequence.ack).to_bytes(), addr)
+            self.socket.sendto(Packet(ack=True, seq=self.sequence.ack).to_bytes(), addr)
         return buffer, self.dest_addr
 
     def close(self):
