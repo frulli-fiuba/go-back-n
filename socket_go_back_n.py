@@ -18,14 +18,25 @@ logging.basicConfig(
 )
 
 
-HOST = "127.0.0.1"
-PORT = 6000
+class Timer:
+    def __init__(self):
+        self.limit_time = None
+
+    def stop(self):
+        self.limit_time = None
+
+    def is_expired(self) -> bool:
+        return self.limit_time and datetime.now() > self.limit_time
+
+    def set(self):
+        self.limit_time = datetime.now() + timedelta(seconds=2)
 
 
 class SocketGoBackN:
     PACKET_SIZE = 1024
     
     def __init__(self):
+        self.host = None
         self.socket = socket(AF_INET, SOCK_DGRAM)
         self.connection_queue = None
         self.dest_addr = None
@@ -37,6 +48,7 @@ class SocketGoBackN:
         self.limit_time = None
         self.window_size = 5 * self.PACKET_SIZE
         self.window_lock = Lock()
+        self.timer = Timer()
 
     def _listen(self):
         self.socket.settimeout(2)
@@ -58,13 +70,15 @@ class SocketGoBackN:
         completed = False
         while not self.end_connection and not completed:
             try: 
-                if self.limit_time and self.limit_time < datetime.now():
-                    logger.debug(f'Timeout - {self.seq_ack}')
+                if self.timer.is_expired():
+                    logger.debug(f'{addr} - Timeout')
                     self.seq = self.seq_ack
+                    self.window_size = 5 * self.PACKET_SIZE
+                    self.timer.stop()
                 
                 data, addr = self.socket.recvfrom(self.PACKET_SIZE)
                 packet = Packet.from_bytes(data)
-                logger.debug(f'{addr} - {Packet.from_bytes(data)}')
+                logger.debug(f'{addr} - {Packet.from_bytes(data)} - RECEIVED')
                 if packet.ack:
                     if packet.seq > self.seq_ack:
                         with self.window_lock:
@@ -76,16 +90,17 @@ class SocketGoBackN:
                         logger.debug(f'{addr} - Transmision completed')
                         completed = True
             except Exception:
-                logger.debug(f"{addr} - No new ACKS")
+                logger.debug(f"{self.dest_addr} - No new ACKS")
 
     def bind(self, host: str, port: int):
+        self.host = host
         self.socket.bind((host, port))
 
     def accept(self) -> 'SocketGoBackN':
         addr = self.connection_queue.get()
         
         socket_connection = socket(AF_INET, SOCK_DGRAM)
-        socket_connection.bind((HOST, 0))
+        socket_connection.bind((self.host, 0))
         socket_connection.sendto(Packet(syn=True, ack=True).to_bytes(), addr)
         
         data, addr = socket_connection.recvfrom(self.PACKET_SIZE)
@@ -107,17 +122,18 @@ class SocketGoBackN:
     def sendall(self, data: bytes):
         self.ack_thread = Thread(target=self._process_ack, args=(len(data),))
         self.ack_thread.start()
-        end = min(self.window_size, self.PACKET_SIZE, len(data))
         fin = False
         self.seq = 0
         self.window_size = 5 * self.PACKET_SIZE
         while not fin:
             fin = len(data[self.seq:]) < self.PACKET_SIZE
+            end = self.seq + min(self.PACKET_SIZE, self.window_size, len(data[self.seq:]))
             if data[self.seq: end]:
-                self.socket.sendto(Packet(data=data[self.seq: end], seq=self.seq, fin=fin).to_bytes(), self.dest_addr)
-                
+                packet = Packet(data=data[self.seq: end], seq=self.seq, fin=fin)
+                self.socket.sendto(packet.to_bytes(), self.dest_addr)
+                logger.debug(f'{self.dest_addr} - {packet} - SENT')
                 if self.seq == self.seq_ack:
-                    self.limit_time = datetime.now() + timedelta(seconds=2)
+                    self.timer.set()
                 
                 with self.window_lock:
                     new_window_size = self.window_size - len(data[self.seq: end])
@@ -125,7 +141,7 @@ class SocketGoBackN:
                     self.window_size = new_window_size 
             
             self.seq = end
-            end = self.seq + min(self.PACKET_SIZE, self.window_size, len(data[self.seq:]))
+            
     
     def recv(self, size: int = 1024) -> Tuple[bytes, str]:
         buffer = b''
@@ -140,6 +156,7 @@ class SocketGoBackN:
                 fin = packet.fin
             else:
                 logger.debug(f'{addr} - {Packet.from_bytes(data)} - IGNORED')
+
             self.socket.sendto(Packet(ack=True, seq=self.seq_ack).to_bytes(), addr)
         return buffer, self.dest_addr
 
