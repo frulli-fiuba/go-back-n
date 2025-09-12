@@ -10,7 +10,7 @@ s.listen()
 
 while True:
     new_socket = s.accept()
-    with open("/home/federulli/Pictures/Screenshot from 2024-03-26 18-36-07.png", "rb") as f:
+    with open("/home/federico-rulli/Pictures/Screenshots/Screenshot from 2025-09-12 18-27-48.png", "rb") as f:
         data = f.read()
         new_socket.sendall(data)
 
