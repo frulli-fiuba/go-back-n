@@ -32,6 +32,7 @@ class SocketGoBackN:
         self.sequence = Sequence()
         self.packet_queue = queue.Queue()
         self.process_incoming_thread = Thread(target=self._process_incoming)
+        self.received_ack = 0
 
     def _listen(self):
         self.socket.settimeout(2)
@@ -50,9 +51,9 @@ class SocketGoBackN:
 
     def _process_ack(self, packet: Packet):
         logger.debug(f'{packet} - RECEIVED')
-        if packet.seq > self.sequence.ack:
-            self.window.increase(packet.seq - self.sequence.ack)
-            self.sequence.ack = packet.seq
+        if packet.seq_number > self.sequence.ack:
+            self.window.increase(packet.seq_number - self.sequence.ack)
+            self.sequence.ack = packet.seq_number
     
     def _process_timeout(self):
         logger.debug('Timeout')
@@ -74,14 +75,14 @@ class SocketGoBackN:
                     self._process_ack(packet)
                 else:
                     packet = Packet.from_bytes(data)
-                    if packet.seq == self.sequence.ack:
+                    if packet.seq_number == self.received_ack:
                         logger.debug(f'{addr} - {Packet.from_bytes(data)} - ACCEPTED')
-                        self.sequence.ack = self.sequence.ack + len(packet.data)
+                        self.received_ack = self.received_ack + len(packet.data)
                         self.packet_queue.put(packet)
                     else:
-                        logger.debug(f'{addr} - {Packet.from_bytes(data)} - IGNORED expected: {self.sequence.ack}')
+                        logger.debug(f'{addr} - {Packet.from_bytes(data)} - IGNORED expected: {self.received_ack}')
 
-                    self.socket.sendto(Packet(ack=True, seq=self.sequence.ack).to_bytes(), addr)
+                    self.socket.sendto(Packet(ack=True, seq_number=self.received_ack).to_bytes(), addr)
             except Exception:
                 pass
 
@@ -116,13 +117,13 @@ class SocketGoBackN:
     def sendall(self, data: bytes):
         fin = False
         offset = self.sequence.send
+        sequence = self.sequence.send
         while not fin:
-            sequence = self.sequence.send
             start = sequence - offset
-            fin = not data[start:]
+            end_file = not data[start:]
             end = start + min(self.PACKET_SIZE, self.window.size, len(data[start:]))
-            if data[start: end] or fin:
-                packet = Packet(data=data[start: end], seq=sequence, fin=fin)
+            if data[start: end] or end_file:
+                packet = Packet(data=data[start: end], seq_number=sequence, fin=end_file)
                 self.socket.sendto(packet.to_bytes(), self.dest_addr)
                 logger.debug(f'{self.dest_addr} - {packet} - SENT')
                 
@@ -134,7 +135,16 @@ class SocketGoBackN:
                 if not self.timer.is_set():
                     self.timer.set()
             
-            self.sequence.send = offset + end 
+            with self.sequence.lock:
+                if sequence > self.sequence._send:
+                    sequence = self.sequence._send
+                else:
+                    self.sequence._send = offset + end 
+                    sequence = offset + end
+                
+                fin = len(data) == self.sequence._ack - offset
+                
+
     
     def recv(self, size: int = 1024) -> bytes:
         buffer = b''

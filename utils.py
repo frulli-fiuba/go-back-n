@@ -6,27 +6,29 @@ import logging
 logger = logging.getLogger(__name__)
 
 class Packet:
-    def __init__(self, data: bytes = b'', seq: int = 0, ack: bool = False, syn: bool = False, fin: bool = False):
+    def __init__(self, data: bytes = b'', seq_number: int = 0, ack_number: int = 0, ack: bool = False, syn: bool = False, fin: bool = False):
         self.data = data
-        self.seq = seq
+        self.seq_number = seq_number
+        self.ack_number = ack_number
         self.ack = ack
         self.syn = syn
         self.fin = fin
     
     def to_bytes(self) -> bytes:
-        return self.seq.to_bytes(4, "big") + self.ack.to_bytes(1, "big") + self.syn.to_bytes(1, "big") + self.fin.to_bytes(1, "big") + self.data
+        return self.seq_number.to_bytes(4, "big") + self.ack_number.to_bytes(4, "big") + self.ack.to_bytes(1, "big") + self.syn.to_bytes(1, "big") + self.fin.to_bytes(1, "big") + self.data
     
     @staticmethod
     def from_bytes(data: bytes) -> 'Packet':
-        seq = int.from_bytes(data[:4], "big")
-        ack = bool(data[4])
-        syn = bool(data[5])
-        fin = bool(data[6])
-        data = data[7:]
-        return Packet(data, seq, ack, syn, fin)
+        seq_number = int.from_bytes(data[:4], "big")
+        ack_number = int.from_bytes(data[4:8], "big")
+        ack = bool(data[8])
+        syn = bool(data[9])
+        fin = bool(data[10])
+        data = data[11:]
+        return Packet(data=data, seq_number=seq_number, ack_number=ack_number, ack=ack, syn=syn, fin=fin)
     
     def __str__(self) -> str:
-        return f"Packet(seq={self.seq}, ack={self.ack}, syn={self.syn}, fin={self.fin}, datasize={len(self.data)})"
+        return f"Packet(seq_number={self.seq_number}, ack_number={self.ack_number}, ack={self.ack}, syn={self.syn}, fin={self.fin}, datasize={len(self.data)})"
 
 
 class Sequence:
