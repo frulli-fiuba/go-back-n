@@ -115,16 +115,16 @@ class SocketGoBackN:
         self.process_incoming_thread.start()
 
     def sendall(self, data: bytes):
-        fin = False
         offset = self.sequence.send
         sequence = self.sequence.send
+        fin = False
         while not fin:
             start = sequence - offset
-            end_file = not data[start:]
             end = start + min(self.PACKET_SIZE, self.window.size, len(data[start:]))
-            if data[start: end] or end_file:
-                packet = Packet(data=data[start: end], seq_number=sequence, fin=end_file)
+            if data[start: end]:
+                packet = Packet(data=data[start: end], seq_number=sequence)
                 self.socket.sendto(packet.to_bytes(), self.dest_addr)
+                
                 logger.debug(f'{self.dest_addr} - {packet} - SENT')
                 
                 if self.sequence.are_equal():
@@ -151,7 +151,7 @@ class SocketGoBackN:
         while True:
             packet = self.packet_queue.get()
             buffer += packet.data
-            if packet.fin:
+            if len(buffer) == size:
                 return buffer
 
     def close(self):
