@@ -7,7 +7,8 @@ PORT = 6000
 
 s = SocketGoBackN()
 s.connect(HOST, PORT)
-
+size = s.recv(1500)
+print(int.from_bytes(size))
 data = s.recv(1500)
 with open("archivo.png", "wb") as f:
     f.write(data)

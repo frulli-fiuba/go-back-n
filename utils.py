@@ -95,15 +95,20 @@ class Window:
 class Timer:
     def __init__(self):
         self.limit_time = None
+        self.lock = Lock()
 
     def stop(self):
-        self.limit_time = None
+        with self.lock:
+            self.limit_time = None
 
     def is_expired(self) -> bool:
-        return self.limit_time and datetime.now() > self.limit_time
+        with self.lock:
+            return self.limit_time and datetime.now() > self.limit_time
     
     def is_set(self) -> bool:
-        return bool(self.limit_time)
+        with self.lock:
+            return bool(self.limit_time)
     
     def set(self):
-        self.limit_time = datetime.now() + timedelta(seconds=2)
+        with self.lock:
+            self.limit_time = datetime.now() + timedelta(seconds=2)
