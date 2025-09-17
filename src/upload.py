@@ -1,11 +1,10 @@
-from socket_go_back_n import SocketGoBackN
+from lib.socket import SocketTP
 from time import sleep
 
 HOST = "127.0.0.1"
 PORT = 6000
 
-
-s = SocketGoBackN()
+s = SocketTP()
 s.connect(HOST, PORT)
 size = s.recv(4)
 int_size = int.from_bytes(size)
