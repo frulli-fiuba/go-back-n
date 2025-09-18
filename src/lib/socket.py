@@ -4,7 +4,6 @@ import queue
 import logging
 from threading import Thread
 
-
 logger = logging.getLogger(__name__)
 
 logging.basicConfig(
@@ -15,8 +14,7 @@ logging.basicConfig(
     ]
 )
 
-
-class SocketGoBackN:
+class SocketTP:
     PACKET_SIZE = 1024
     
     def __init__(self, window_size=5):
@@ -90,7 +88,9 @@ class SocketGoBackN:
         self.host = host
         self.socket.bind((host, port))
 
-    def accept(self) -> 'SocketGoBackN':
+    #TODO manage packet loss
+    #check that first package is a SYN one
+    def accept(self) -> 'SocketTP':
         addr = self.connection_queue.get()
         
         socket_connection = socket(AF_INET, SOCK_DGRAM)
@@ -100,12 +100,14 @@ class SocketGoBackN:
         data, addr = socket_connection.recvfrom(self.PACKET_SIZE)
         logger.debug(f'{addr} - {Packet.from_bytes(data)}')
         
-        new_socket = SocketGoBackN(self.window_size)
+        #TODO add parameter to generalize for both go back n and stop & wait
+        new_socket = SocketTP(self.window_size)
         new_socket.socket = socket_connection
         new_socket.dest_addr = addr
         new_socket.process_incoming_thread.start()
         return new_socket
     
+    #TODO add paramater to use stop & wait or gbn
     def connect(self, host: str, port: int):
         self.socket.sendto(Packet(syn=True).to_bytes(), (host, port))
         data, addr = self.socket.recvfrom(self.PACKET_SIZE)
@@ -152,8 +154,9 @@ class SocketGoBackN:
             packet = self.packet_queue.get()
             buffer += packet.data
             if len(buffer) == size:
-                return buffer
+                return buffer     
 
+    #TODO add close flux
     def close(self):
         self.end_connection = True
         self.socket.close()
