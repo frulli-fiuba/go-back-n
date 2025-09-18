@@ -1,5 +1,5 @@
 from socket import socket, AF_INET, SOCK_DGRAM
-from utils import Packet, Window, Timer, Sequence
+from .utils import Packet, Window, Timer, Sequence
 import queue
 import logging
 from threading import Thread
