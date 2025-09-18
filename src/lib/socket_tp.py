@@ -3,6 +3,9 @@ from .utils import Packet, Window, Timer, Sequence
 import queue
 import logging
 from threading import Thread
+from time import sleep
+from collections import defaultdict
+
 
 logger = logging.getLogger(__name__)
 
@@ -14,8 +17,10 @@ logging.basicConfig(
     ]
 )
 
+
 class SocketTP:
     PACKET_SIZE = 1024
+    TIMEOUT = 2
     
     def __init__(self, window_size=5):
         self.host = None
@@ -31,54 +36,61 @@ class SocketTP:
         self.packet_queue = queue.Queue()
         self.process_incoming_thread = Thread(target=self._process_incoming)
         self.received_ack = 0
+        self.connection_being_accepted = None
+        self.connection_accepted = False
 
-    def _listen(self):
-        self.socket.settimeout(2)
-        while not self.end_connection:
-            try:
-                data, addr = self.socket.recvfrom(self.PACKET_SIZE)
-                logger.debug(f'{addr} - {Packet.from_bytes(data)}')
-                self.connection_queue.put(addr)
-            except:
-                continue
+    def _process_syn(self, addr: str, packet: Packet):     
+        logger.debug(f'{addr} - {packet} - SYN RECEIVED')   
+        if not packet.ack and addr != self.connection_being_accepted and self.connection_queue:
+            logger.debug(f"Added {addr} to the connection queue")
+            self.connection_queue.put(addr)
+        elif packet.syn and packet.ack:
+            self.socket.sendto(Packet(ack=True).to_bytes(), addr)
+            self.dest_addr = addr          
     
     def listen(self, maxsize: int = 0):
         self.connection_queue = queue.Queue(maxsize=maxsize)
-        self.listen_thread = Thread(target=self._listen)
-        self.listen_thread.start()
+        self.process_incoming_thread.start()
 
-    def _process_ack(self, packet: Packet):
+    def _process_ack(self, packet: Packet, repeated_ack: dict):
         logger.debug(f'{packet} - RECEIVED')
+        
         if packet.seq_number > self.sequence.ack:
             self.window.increase(packet.seq_number - self.sequence.ack)
             self.sequence.ack = packet.seq_number
+        else:
+            repeated_ack[packet.seq_number] += 1
+            if repeated_ack[packet.seq_number] > 3:
+                logger.debug(f"REPEATED ACK {packet.seq_number}: {repeated_ack[packet.seq_number]} RESENDING")
+                self._reset()
     
-    def _process_timeout(self):
-        logger.debug('Timeout')
+    def _reset(self):
         self.sequence.reset()
         self.window.reset()
         self.timer.stop()
     
     def _process_incoming(self):
-        self.socket.settimeout(2)
+        self.socket.settimeout(self.TIMEOUT)
+        repeated_ack = defaultdict(int)
         while not self.end_connection:
             try:
                 if self.timer.is_expired():
-                    self._process_timeout()
+                    logger.debug('Timeout')
+                    self._reset()
                 
                 data, addr = self.socket.recvfrom(1500)
                 packet = Packet.from_bytes(data)
-                
-                if packet.ack:
-                    self._process_ack(packet)
+                if packet.syn:
+                    self._process_syn(addr, packet)
+                elif packet.ack:
+                    self._process_ack(packet, repeated_ack)
                 else:
-                    packet = Packet.from_bytes(data)
                     if packet.seq_number == self.received_ack:
-                        logger.debug(f'{addr} - {Packet.from_bytes(data)} - ACCEPTED')
+                        logger.debug(f'{addr} - {packet} - ACCEPTED')
                         self.received_ack = self.received_ack + len(packet.data)
                         self.packet_queue.put(packet)
                     else:
-                        logger.debug(f'{addr} - {Packet.from_bytes(data)} - IGNORED expected: {self.received_ack}')
+                        logger.debug(f'{addr} - {packet} - IGNORED expected: {self.received_ack}')
 
                     self.socket.sendto(Packet(ack=True, seq_number=self.received_ack).to_bytes(), addr)
             except Exception:
@@ -87,20 +99,26 @@ class SocketTP:
     def bind(self, host: str, port: int):
         self.host = host
         self.socket.bind((host, port))
-
-    #TODO manage packet loss
-    #check that first package is a SYN one
+ 
     def accept(self) -> 'SocketTP':
         addr = self.connection_queue.get()
+        self.connection_being_accepted = addr
         
         socket_connection = socket(AF_INET, SOCK_DGRAM)
         socket_connection.bind((self.host, 0))
-        socket_connection.sendto(Packet(syn=True, ack=True).to_bytes(), addr)
-        
-        data, addr = socket_connection.recvfrom(self.PACKET_SIZE)
-        logger.debug(f'{addr} - {Packet.from_bytes(data)}')
-        
-        #TODO add parameter to generalize for both go back n and stop & wait
+        socket_connection.settimeout(self.TIMEOUT)
+
+        while self.connection_being_accepted:
+            try:
+                socket_connection.sendto(Packet(syn=True, ack=True).to_bytes(), addr)
+                data, recv_addr = socket_connection.recvfrom(self.PACKET_SIZE)
+                packet = Packet.from_bytes(data)
+                logger.debug(f'{addr} - {packet}')
+                if recv_addr == addr and packet.ack:
+                    self.connection_being_accepted = None
+            except:
+                pass
+            
         new_socket = SocketTP(self.window_size)
         new_socket.socket = socket_connection
         new_socket.dest_addr = addr
@@ -109,12 +127,10 @@ class SocketTP:
     
     #TODO add paramater to use stop & wait or gbn
     def connect(self, host: str, port: int):
-        self.socket.sendto(Packet(syn=True).to_bytes(), (host, port))
-        data, addr = self.socket.recvfrom(self.PACKET_SIZE)
-        logger.debug(f'{addr} - {Packet.from_bytes(data)}')
-        self.socket.sendto(Packet(ack=True).to_bytes(), addr)
-        self.dest_addr = addr
         self.process_incoming_thread.start()
+        while not self.dest_addr:
+            self.socket.sendto(Packet(syn=True).to_bytes(), (host, port))
+            sleep(self.TIMEOUT)       
 
     def sendall(self, data: bytes):
         offset = self.sequence.send
@@ -145,16 +161,14 @@ class SocketTP:
                     sequence = offset + end
                 
                 fin = len(data) == self.sequence._ack - offset
-                
-
     
-    def recv(self, size: int = 1024) -> bytes:
+    def recv(self, size: int) -> bytes:
         buffer = b''
         while True:
             packet = self.packet_queue.get()
             buffer += packet.data
             if len(buffer) == size:
-                return buffer     
+                return buffer
 
     #TODO add close flux
     def close(self):
