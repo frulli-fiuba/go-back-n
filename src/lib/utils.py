@@ -12,35 +12,39 @@ class ErrorRecoveryMode(Enum):
     STOP_AND_WAIT = 2
 
 
+ERROR_RECOVERY_PROTOCOL_MAPPING = {
+    "GO_BACK_N": ErrorRecoveryMode.GO_BACK_N,
+    "STOP_AND_WAIT": ErrorRecoveryMode.STOP_AND_WAIT
+}
+
+
 def validate_type(name: str, value: Any, type_to_validate: type):
     if not isinstance(value,type_to_validate):
         raise ValueError(f"{name} should be of type {type_to_validate}")
 
 
 class Packet:
-    def __init__(self, data: bytes = b'', seq_number: int = 0, ack_number: int = 0, ack: bool = False, syn: bool = False, fin: bool = False):
+    def __init__(self, data: bytes = b'', seq_number: int = 0, ack: bool = False, syn: bool = False, fin: bool = False):
         self.data = data
         self.seq_number = seq_number
-        self.ack_number = ack_number
         self.ack = ack
         self.syn = syn
         self.fin = fin
     
     def to_bytes(self) -> bytes:
-        return self.seq_number.to_bytes(4, "big") + self.ack_number.to_bytes(4, "big") + self.ack.to_bytes(1, "big") + self.syn.to_bytes(1, "big") + self.fin.to_bytes(1, "big") + self.data
+        return self.seq_number.to_bytes(4, "big") + self.ack.to_bytes(1, "big") + self.syn.to_bytes(1, "big") + self.fin.to_bytes(1, "big") + self.data
     
     @staticmethod
     def from_bytes(data: bytes) -> 'Packet':
         seq_number = int.from_bytes(data[:4], "big")
-        ack_number = int.from_bytes(data[4:8], "big")
-        ack = bool(data[8])
-        syn = bool(data[9])
-        fin = bool(data[10])
-        data = data[11:]
-        return Packet(data=data, seq_number=seq_number, ack_number=ack_number, ack=ack, syn=syn, fin=fin)
+        ack = bool(data[4])
+        syn = bool(data[5])
+        fin = bool(data[6])
+        data = data[7:]
+        return Packet(data=data, seq_number=seq_number, ack=ack, syn=syn, fin=fin)
     
     def __str__(self) -> str:
-        return f"Packet(seq_number={self.seq_number}, ack_number={self.ack_number}, ack={self.ack}, syn={self.syn}, fin={self.fin}, datasize={len(self.data)})"
+        return f"Packet(seq_number={self.seq_number}, ack={self.ack}, syn={self.syn}, fin={self.fin}, datasize={len(self.data)})"
 
 
 class Sequence:
@@ -124,4 +128,4 @@ class Timer:
     
     def set(self):
         with self.lock:
-            self.limit_time = datetime.now() + timedelta(seconds=1)
+            self.limit_time = datetime.now() + timedelta(seconds=0.05)

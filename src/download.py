@@ -1,6 +1,7 @@
 import argparse
 from lib.socket_tp import SocketTP
 from time import sleep
+from lib.utils import ERROR_RECOVERY_PROTOCOL_MAPPING
 
 HOST = "127.0.0.1"
 PORT = 6000
@@ -13,7 +14,7 @@ def main():
     parser.add_argument('-p', '--port', type=int, default=PORT, help='server port')
     parser.add_argument('-d', '--dst', type=str, required=True, help='destination file path')
     parser.add_argument('-n', '--name', type=str, required=True, help='file name')
-    parser.add_argument('-r', '--protocol', type=str, help='error recovery protocol')
+    parser.add_argument('-r', '--protocol', type=str, help='error recovery protocol', choices=ERROR_RECOVERY_PROTOCOL_MAPPING.keys(), default="GO_BACK_N")
     
     args = parser.parse_args()
 

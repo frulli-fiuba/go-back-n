@@ -12,7 +12,7 @@ logger = logging.getLogger("socket")
 
 
 class SocketTP:
-    PACKET_SIZE = 1024
+    PACKET_SIZE = 1450
     CONNECTION_TIMEOUT = 30
     SOCKET_TIMEOUT = 1
     GO_BACK_N_WINDOW = 100 * PACKET_SIZE
@@ -58,8 +58,8 @@ class SocketTP:
         self.process_incoming_thread.start()
         self.timer_thread.start()
 
-    def _process_ack(self, packet: Packet, repeated_ack: dict):
-        logger.debug(f'{packet} - RECEIVED')
+    def _process_ack(self, addr: str, packet: Packet, repeated_ack: dict):
+        logger.debug(f'{packet} - RECEIVED from {addr}')
         if packet.seq_number > self.sequence.ack:
             self.window.increase(packet.seq_number - self.sequence.ack)
             self.sequence.ack = packet.seq_number
@@ -92,7 +92,7 @@ class SocketTP:
                 if packet.syn:
                     self._process_syn(addr, packet)
                 elif packet.ack:
-                    self._process_ack(packet, repeated_ack)
+                    self._process_ack(addr, packet, repeated_ack)
                 else:
                     if packet.seq_number == self.received_ack:
                         logger.debug(f'{addr} - {packet} - ACCEPTED')
@@ -164,7 +164,11 @@ class SocketTP:
         offset = self.sequence.send
         sequence = self.sequence.send
         fin = False
+        time_limit = datetime.now() + timedelta(seconds=self.CONNECTION_TIMEOUT)
+        last_ack = None
         while not fin:
+            if datetime.now() > time_limit:
+                raise Exception("TIME OUT")
             start = sequence - offset
             end = start + min(self.PACKET_SIZE, self.window.size, len(data[start:]))
             if data[start: end]:
@@ -187,7 +191,10 @@ class SocketTP:
                 else:
                     self.sequence._send = offset + end 
                     sequence = offset + end
-                
+                if last_ack != self.sequence._ack:
+                    # Si no cambio el ack por CONNECTION_TIMEOUT segundos asumimos q murio el receiver
+                    time_limit = datetime.now() + timedelta(seconds=self.CONNECTION_TIMEOUT)
+                    last_ack = self.sequence._ack
                 fin = len(data) == self.sequence._ack - offset
     
     def recv(self, size: int) -> bytes:
@@ -215,7 +222,7 @@ class SocketTP:
 
     #TODO add close flux
     def close(self):
-        sleep(1)
+        sleep(1) # por si quedan packetes pendientes de ack
         self.end_connection = True
         self.socket.close()
         self.process_incoming_thread.join()
