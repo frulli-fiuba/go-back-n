@@ -1,8 +1,21 @@
+from typing import Any
 from threading import Lock
 from datetime import datetime, timedelta
+from enum import Enum
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("socket")
+
+
+class ErrorRecoveryMode(Enum):
+    GO_BACK_N = 1
+    STOP_AND_WAIT = 2
+
+
+def validate_type(name: str, value: Any, type_to_validate: type):
+    if not isinstance(value,type_to_validate):
+        raise ValueError(f"{name} should be of type {type_to_validate}")
+
 
 class Packet:
     def __init__(self, data: bytes = b'', seq_number: int = 0, ack_number: int = 0, ack: bool = False, syn: bool = False, fin: bool = False):
@@ -43,8 +56,7 @@ class Sequence:
     
     @property
     def ack(self):
-        with self.lock:
-            return self._ack
+        return self._ack
 
     @send.setter
     def send(self, send: int):
@@ -61,8 +73,8 @@ class Sequence:
             self._send = self._ack
     
     def are_equal(self):
-        with self.lock:
-            return self._send == self._ack
+        return self._send == self._ack
+
 
 class Window:
     def __init__(self, size: int):
@@ -84,14 +96,16 @@ class Window:
     
     @property
     def size(self)->int:
-        with self.lock:
-            return self._actual_size
+        return self._actual_size
     
-    def reset(self):
+    def reset(self, window_size: int = None):
         with self.lock:
+            if window_size:
+                self._size = window_size
             old_size = self._actual_size
             self._actual_size = self._size
             logger.debug(f'Window size, from {old_size} to {self._actual_size} - RESET')  
+
 
 class Timer:
     def __init__(self):
@@ -103,13 +117,11 @@ class Timer:
             self.limit_time = None
 
     def is_expired(self) -> bool:
-        with self.lock:
-            return self.limit_time and datetime.now() > self.limit_time
+        return self.limit_time and datetime.now() > self.limit_time
     
     def is_set(self) -> bool:
-        with self.lock:
-            return bool(self.limit_time)
+        return bool(self.limit_time)
     
     def set(self):
         with self.lock:
-            self.limit_time = datetime.now() + timedelta(seconds=2)
+            self.limit_time = datetime.now() + timedelta(seconds=1)
