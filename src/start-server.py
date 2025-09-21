@@ -1,8 +1,27 @@
 import argparse
+import logging
+import logging.config
+from threading import Thread
+
+logging.config.fileConfig("./lib/logging.conf")
+
 from lib.socket_tp import SocketTP
+
+logger = logging.getLogger(__name__)
 
 HOST = "127.0.0.1"
 PORT = 6000
+
+def send_file(socket: SocketTP):
+    with open("/home/federico-rulli/workingdir/go-back-n/archivo_1", "rb") as f:
+        data = f.read()
+        size = len(data)
+        try:
+            socket.sendall(size.to_bytes(4))
+            socket.sendall(data)
+        finally:
+            socket.close()
+
 
 def main():
     parser = argparse.ArgumentParser(description='Starts the server for file transfers.')
@@ -15,21 +34,20 @@ def main():
     args = parser.parse_args()
 
     print(f"Iniciando el servidor en {args.host}:{args.port} con el directorio de almacenamiento en '{args.storage}'")
-    
+    if args.verbose:
+        logging.getLogger("socket").setLevel(logging.DEBUG)
     # TODO: Implementar la lógica del servidor, idealmente en una función aparte y con los parámetros correspondientes.
-    s = SocketTP(5)
-    s.bind(HOST, PORT)
+    s = SocketTP()
+    s.bind(args.host, args.port)
     s.listen()
-
+    threads = []
     while True:
         new_socket = s.accept()
         #TODO add parameter
-        with open("/home/federico-rulli/Pictures/Screenshots/Screenshot from 2025-09-12 18-27-48.png", "rb") as f:
-            data = f.read()
-            size = len(data)
-            new_socket.sendall(size.to_bytes(4))
-            new_socket.sendall(data)
-
+        thread = Thread(target=send_file, args=(new_socket,))
+        thread.start()
+        threads.append(thread)
+    
     s.close()
 
 if __name__ == '__main__':
