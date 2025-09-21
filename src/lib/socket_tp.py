@@ -1,5 +1,6 @@
 from socket import socket, AF_INET, SOCK_DGRAM
-from .utils import Packet, Window, Timer, Sequence, ErrorRecoveryMode, validate_type
+from .utils import Packet, Window, Timer, Sequence, validate_type
+from .constants import ErrorRecoveryMode
 import queue
 import logging
 from threading import Thread
