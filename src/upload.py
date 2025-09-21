@@ -45,7 +45,8 @@ def main():
 
     send_file(s, args.src)
 
-    logger.info("Fin de la subida.")
+    logger.info("Fin de la subida, cerrando socket.")
+    s.close()
 
 
 if __name__ == '__main__':

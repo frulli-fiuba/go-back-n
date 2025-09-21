@@ -45,8 +45,7 @@ def main():
     recv_file(s, args.dst, args.name)
 
     s.close()
-
-    logger.info("Fin de la descarga.")
+    logger.info("Fin de la descarga, cerrando socket.")
 
 
 if __name__ == '__main__':
