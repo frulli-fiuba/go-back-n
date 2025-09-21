@@ -1,21 +1,9 @@
 from typing import Any
 from threading import Lock, Condition
 from datetime import datetime, timedelta
-from enum import Enum
 import logging
 
 logger = logging.getLogger("socket")
-
-
-class ErrorRecoveryMode(Enum):
-    GO_BACK_N = 1
-    STOP_AND_WAIT = 2
-
-
-ERROR_RECOVERY_PROTOCOL_MAPPING = {
-    "GO_BACK_N": ErrorRecoveryMode.GO_BACK_N,
-    "STOP_AND_WAIT": ErrorRecoveryMode.STOP_AND_WAIT
-}
 
 
 def validate_type(name: str, value: Any, type_to_validate: type):
