@@ -12,11 +12,11 @@ from lib.socket_tp import SocketTP
 logger = logging.getLogger(__name__)
 
 def send_file(socket: SocketTP):
-    with open("/home/federico-rulli/workingdir/go-back-n/archivo_1", "rb") as f:
+    with open("./test.png", "rb") as f:
         data = f.read()
         size = len(data)
         try:
-            socket.sendall(size.to_bytes(4))
+            socket.sendall(size.to_bytes(4, "big"))
             socket.sendall(data)
         finally:
             socket.close()

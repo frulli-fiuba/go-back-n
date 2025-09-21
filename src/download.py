@@ -1,6 +1,6 @@
 import argparse
 from lib.socket_tp import SocketTP
-from lib.constants import ERROR_RECOVERY_PROTOCOL_MAPPING, DEFAULT_HOST, DEFAULT_PORT
+from lib.constants import ERROR_RECOVERY_PROTOCOL_MAPPING, DEFAULT_HOST, DEFAULT_PORT, ClientMode
 from lib.validations import download_validations
 from time import sleep
 
@@ -22,7 +22,13 @@ def main():
 
     # TODO: Implementar la lógica de descarga de archivo
     # s = SocketTP()
-    # s.connect(args.host, args.port)
+    # s.connect(
+    #     args.host,
+    #     args.port,
+    #     args.name,
+    #     ERROR_RECOVERY_PROTOCOL_MAPPING[args.protocol],
+    #     ClientMode.DOWNLOAD
+    # )
     # ...
 
 if __name__ == '__main__':

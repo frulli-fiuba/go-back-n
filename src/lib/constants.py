@@ -12,3 +12,8 @@ ERROR_RECOVERY_PROTOCOL_MAPPING = {
     "GO_BACK_N": ErrorRecoveryMode.GO_BACK_N,
     "STOP_AND_WAIT": ErrorRecoveryMode.STOP_AND_WAIT
 }
+
+
+class ClientMode(Enum):
+    UPLOAD = 1
+    DOWNLOAD = 2

@@ -2,7 +2,7 @@ import argparse
 import logging
 import logging.config
 from lib.validations import upload_validations
-from lib.constants import ERROR_RECOVERY_PROTOCOL_MAPPING, DEFAULT_HOST, DEFAULT_PORT
+from lib.constants import ERROR_RECOVERY_PROTOCOL_MAPPING, DEFAULT_HOST, DEFAULT_PORT, ClientMode
 
 logging.config.fileConfig("./lib/logging.conf")
 
@@ -32,11 +32,17 @@ def main():
         logging.getLogger("socket").setLevel(logging.DEBUG)
     # TODO: Implementar la lógica de subida de archivo, idealmente en nueva función y con los parámetros correspondientes.
     s = SocketTP()
-    s.connect(args.host, args.port, ERROR_RECOVERY_PROTOCOL_MAPPING[args.protocol])
+    s.connect(
+        args.host,
+        args.port,
+        args.name,
+        ERROR_RECOVERY_PROTOCOL_MAPPING[args.protocol],
+        ClientMode.UPLOAD
+    )
     size = s.recv(4)
     int_size = int.from_bytes(size)
     data = s.recv(int_size)
-    with open(f"/home/federico-rulli/Pictures/Screenshots/{args.name}", "wb") as f:
+    with open(f"../assets/recibo.png", "wb") as f:
         f.write(data)
     s.close()
 if __name__ == '__main__':
