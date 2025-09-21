@@ -14,17 +14,37 @@ logger = logging.getLogger(__name__)
 
 
 def handle_client(socket: SocketTP, storage_dir: str):
-    if socket.client_mode == ClientMode.DOWNLOAD:
-        filepath = os.path.join(storage_dir, socket.filename)
+    try:
+        client_mode_b = socket.recv(4)
+        client_mode = ClientMode(int.from_bytes(client_mode_b, "big"))
+
+        name_len_b = socket.recv(4)
+        name_len = int.from_bytes(name_len_b, "big")
+        name_b = socket.recv(name_len)
+        filename = name_b.decode("utf-8")
+
+
+    except Exception as e:
+        logger.error(f"Error leyendo metadata inicial del cliente: {e}")
+        socket.close()
+        return
+
+    if client_mode == ClientMode.DOWNLOAD:
+        filepath = os.path.join(storage_dir, filename)
         if not os.path.exists(filepath):
+            socket.sendall((-1).to_bytes(4, "big", signed=True))
             logger.error(f"Archivo {filepath} no existe, no se puede enviar.")
             socket.close()
             return
-
-        send_file(socket, filepath)
-    elif socket.client_mode == ClientMode.UPLOAD:
-        os.makedirs(storage_dir, exist_ok=True)
-        recv_file(socket, storage_dir, socket.filename)
+        try:
+            send_file(socket, filepath)
+        finally:
+            socket.close()
+    elif client_mode == ClientMode.UPLOAD:
+        try:
+            recv_file(socket, storage_dir, filename)
+        finally:
+            socket.close()
 
 
 def main():

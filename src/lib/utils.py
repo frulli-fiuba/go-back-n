@@ -12,47 +12,27 @@ def validate_type(name: str, value: Any, type_to_validate: type):
     if not isinstance(value,type_to_validate):
         raise ValueError(f"{name} should be of type {type_to_validate}")
 
-def build_syn_payload(mode: ErrorRecoveryMode, client_mode: ClientMode, filename: str) -> bytes:
+
+def build_syn_payload(mode: ErrorRecoveryMode) -> bytes:
     """
     Formato:
       - 4 bytes: mode (big-endian uint32)
-      - 4 byte: client_mode (big-endian uint32)
-      - 4 bytes: filename length (big-endian uint32)
-      - N bytes: filename UTF-8
     """
-    mode_bytes = mode.value.to_bytes(4, "big")
-    client_mode_b = client_mode.value.to_bytes(4, "big")
-    fname_b = filename.encode("utf-8")
-    if len(fname_b) > 65535:
-        raise ValueError("filename too long (max 65535 bytes)")
-    filename_lengthb = len(fname_b).to_bytes(4, "big")
-    return mode_bytes + client_mode_b + filename_lengthb + fname_b
+    return mode.value.to_bytes(4, "big")
 
-def parse_syn_payload(data: bytes) -> Tuple[ErrorRecoveryMode, ClientMode, str]:
+
+def parse_syn_payload(data: bytes) -> Tuple[ErrorRecoveryMode]:
     """
     Parsea el payload del SYN.
     Formato:
       - 4 bytes: mode (big-endian uint32)
-      - 4 bytes: client_mode (big-endian uint32)
-      - 4 bytes: filename length (big-endian uint32)
-      - N bytes: filename UTF-8
     """
-    if len(data) < 12:
+    if len(data) < 4:
         raise ValueError("syn payload too short")
     
     mode_val = int.from_bytes(data[:4], "big")
-    mode = ErrorRecoveryMode(mode_val)
+    return ErrorRecoveryMode(mode_val)
 
-    client_mode_val = int.from_bytes(data[4:8], "big")
-    client_mode = ClientMode(client_mode_val)
-
-    fname_len = int.from_bytes(data[8:12], "big")
-    if len(data) < 12 + fname_len:
-        raise ValueError("incomplete filename in syn payload")
-    
-    filename = data[12:12 + fname_len].decode("utf-8")
-
-    return mode, client_mode, filename
 
 class Packet:
     def __init__(self, data: bytes = b'', seq_number: int = 0, ack: bool = False, syn: bool = False, fin: bool = False):

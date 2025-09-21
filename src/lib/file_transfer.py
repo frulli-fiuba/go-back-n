@@ -2,7 +2,7 @@ import os
 import logging
 from lib.socket_tp import SocketTP
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("root")
 
 
 def send_file(socket: SocketTP, src: str):
@@ -22,7 +22,13 @@ def send_file(socket: SocketTP, src: str):
 def recv_file(socket, dst: str, name: str):
     try: 
         size_bytes = socket.recv(4)
-        int_size = int.from_bytes(size_bytes, "big")
+        int_size = int.from_bytes(size_bytes, "big", signed=True)
+
+        if int_size == -1:
+            logger.error("El servidor indicó que el archivo no existe.")
+            socket.close()
+            return
+
         data = socket.recv(int_size)
     except Exception as e:
         logger.error(f"Error recibiendo archivo: {e}")

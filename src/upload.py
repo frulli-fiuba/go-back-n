@@ -34,10 +34,14 @@ def main():
     s.connect(
         args.host,
         args.port,
-        args.name,
         ERROR_RECOVERY_PROTOCOL_MAPPING[args.protocol],
-        ClientMode.UPLOAD
     )
+
+    s.sendall(ClientMode.UPLOAD.value.to_bytes(4, "big"))
+    
+    name_b = args.name.encode("utf-8")
+    s.sendall(len(name_b).to_bytes(4, "big"))
+    s.sendall(name_b)
 
     send_file(s, args.src)
 

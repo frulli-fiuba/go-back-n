@@ -33,12 +33,18 @@ def main():
     s.connect(
         args.host,
         args.port,
-        args.name,
         ERROR_RECOVERY_PROTOCOL_MAPPING[args.protocol],
-        ClientMode.DOWNLOAD
     )
-    
+
+    s.sendall(ClientMode.DOWNLOAD.value.to_bytes(4, "big"))
+
+    name_b = args.name.encode("utf-8")
+    s.sendall(len(name_b).to_bytes(4, "big"))
+    s.sendall(name_b)
+
     recv_file(s, args.dst, args.name)
+
+    s.close()
 
     logger.info(f"Archivo '{args.name}' descargado correctamente del servidor.")
 
