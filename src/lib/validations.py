@@ -1,7 +1,10 @@
 import os
 import socket
 import sys
+import logging
 from lib.constants import ERROR_RECOVERY_PROTOCOL_MAPPING
+
+logger = logging.getLogger(__name__)
 
 
 def validate_host(host):
@@ -22,17 +25,6 @@ def validate_port(port):
         return False
 
     return 1 <= port <= 65535
-
-
-def validate_protocol(protocol):
-    """Valida que el protocolo sea uno de los valores permitidos."""
-    if protocol is None:
-        return True
-
-    if protocol not in ERROR_RECOVERY_PROTOCOL_MAPPING.keys():
-        return False
-    
-    return True
 
 
 def validate_src_file(src_path):
@@ -142,9 +134,15 @@ def server_validations(args):
             errors.append(f"Directorio de almacenamiento inválido: '{args.storage}'.")
     
     if errors:
+<<<<<<< HEAD
         print("Errores de validación del servidor:")
         for error in errors:
             print(f"  - {error}")
+=======
+        logger.error("Errores de validación del servidor:")
+        for error in errors:
+            logger.error(f"  - {error}")
+>>>>>>> d26520205e8cb12b3a5bda3811efd6cefe8ad1b7
         sys.exit(1)
 
 
@@ -152,10 +150,13 @@ def upload_validations(args):
     """Validaciones para upload: base + src + name + protocol."""
     errors = _base_validations(args)
     
+<<<<<<< HEAD
     if not validate_protocol(args.protocol):
         protocol_list = ", ".join(ERROR_RECOVERY_PROTOCOL_MAPPING.keys())
         errors.append(f"Protocolo inválido: '{args.protocol}'. Debe ser uno de: {protocol_list}.")
     
+=======
+>>>>>>> d26520205e8cb12b3a5bda3811efd6cefe8ad1b7
     if hasattr(args, 'src') and not validate_src_file(args.src):
         if not os.path.exists(args.src):
             errors.append(f"Archivo de origen no encontrado: '{args.src}'.")
@@ -175,9 +176,15 @@ def upload_validations(args):
             errors.append(f"Nombre de archivo inválido: '{args.name}'. Contiene caracteres no permitidos.")
     
     if errors:
+<<<<<<< HEAD
         print("Errores de validación de upload:")
         for error in errors:
             print(f"  - {error}")
+=======
+        logger.error("Errores de validación de upload:")
+        for error in errors:
+            logger.error(f"  - {error}")
+>>>>>>> d26520205e8cb12b3a5bda3811efd6cefe8ad1b7
         sys.exit(1)
 
 
@@ -185,6 +192,7 @@ def download_validations(args):
     """Validaciones para download: base + destination + name + protocol."""
     errors = _base_validations(args)
     
+<<<<<<< HEAD
     if not validate_protocol(args.protocol):
         protocol_list = ", ".join(ERROR_RECOVERY_PROTOCOL_MAPPING.keys())
         errors.append(f"Protocolo inválido: '{args.protocol}'. Debe ser uno de: {protocol_list}.")
@@ -199,6 +207,21 @@ def download_validations(args):
             errors.append(f"No se puede escribir en el directorio de destino: '{dest_dir}'. Verifique los permisos.")
         else:
             errors.append(f"Directorio de destino inválido: '{args.destination}'.")
+=======
+    dest_attr = 'dst' if hasattr(args, 'dst') else 'destination'
+    if hasattr(args, dest_attr):
+        dest_path = getattr(args, dest_attr)
+        if not validate_destination_dir(dest_path):
+            dest_dir = os.path.dirname(dest_path) if os.path.isfile(dest_path) else dest_path
+            if not os.path.exists(dest_dir):
+                errors.append(f"Directorio de destino no encontrado: '{dest_dir}'.")
+            elif not os.path.isdir(dest_dir):
+                errors.append(f"La ruta especificada no es un directorio: '{dest_dir}'.")
+            elif not os.access(dest_dir, os.W_OK):
+                errors.append(f"No se puede escribir en el directorio de destino: '{dest_dir}'. Verifique los permisos.")
+            else:
+                errors.append(f"Directorio de destino inválido: '{dest_path}'.")
+>>>>>>> d26520205e8cb12b3a5bda3811efd6cefe8ad1b7
     
     if hasattr(args, 'name') and args.name and not validate_file_name(args.name):
         if not args.name.strip():
@@ -209,7 +232,13 @@ def download_validations(args):
             errors.append(f"Nombre de archivo inválido: '{args.name}'. Contiene caracteres no permitidos.")
     
     if errors:
+<<<<<<< HEAD
         print("Errores de validación de download:")
         for error in errors:
             print(f"  - {error}")
+=======
+        logger.error("Errores de validación de download:")
+        for error in errors:
+            logger.error(f"  - {error}")
+>>>>>>> d26520205e8cb12b3a5bda3811efd6cefe8ad1b7
         sys.exit(1)
