@@ -1,8 +1,9 @@
+import os
 import argparse
 import logging
 import logging.config
 from threading import Thread
-from lib.constants import DEFAULT_HOST, DEFAULT_PORT
+from lib.constants import DEFAULT_HOST, DEFAULT_PORT, ClientMode
 from lib.validations import server_validations
 
 logging.config.fileConfig("./lib/logging.conf")
@@ -11,15 +12,40 @@ from lib.socket_tp import SocketTP
 
 logger = logging.getLogger(__name__)
 
-def send_file(socket: SocketTP):
-    with open("../assets/upload-test.png", "rb") as f:
-        data = f.read()
-        size = len(data)
+
+def handle_client(socket: SocketTP, storage_dir: str):
+    filepath = os.path.join(storage_dir, socket.filename)
+
+    if socket.client_mode == ClientMode.DOWNLOAD:
+        if not os.path.exists(filepath):
+            logger.error(f"Archivo {filepath} no existe, no se puede enviar.")
+            socket.close()
+            return
+
+        with open(filepath, "rb") as f:
+            data = f.read()
+        size_bytes = len(data).to_bytes(4, "big")
         try:
-            socket.sendall(size.to_bytes(4, "big"))
+            socket.sendall(size_bytes)
             socket.sendall(data)
         finally:
             socket.close()
+    
+    elif socket.client_mode == ClientMode.UPLOAD:
+        try:
+            size_bytes = socket.recv(4)
+            size = int.from_bytes(size_bytes, "big")
+            data = socket.recv(size)
+        except Exception as e:
+            logger.error(f"Error recibiendo archivo: {e}")
+            socket.close()
+            return
+
+        os.makedirs(storage_dir, exist_ok=True)
+        with open(filepath, "wb") as f:
+            f.write(data)
+        logger.info(f"Archivo recibido y guardado en {filepath}")
+        socket.close()
 
 
 def main():
@@ -33,18 +59,18 @@ def main():
     args = parser.parse_args()
     server_validations(args)
 
-    print(f"Iniciando el servidor en {args.host}:{args.port} con el directorio de almacenamiento en '{args.storage}'")
+    logger.info(f"Iniciando el servidor en {args.host}:{args.port} con el directorio de almacenamiento en '{args.storage}'")
+
     if args.verbose:
         logging.getLogger("socket").setLevel(logging.DEBUG)
-    # TODO: Implementar la lógica del servidor, idealmente en una función aparte y con los parámetros correspondientes.
+
     s = SocketTP()
     s.bind(args.host, args.port)
     s.listen()
     threads = []
     while True:
         new_socket = s.accept()
-        #TODO add parameter
-        thread = Thread(target=send_file, args=(new_socket,))
+        thread = Thread(target=handle_client, args=(new_socket, args.storage))
         thread.start()
         threads.append(thread)
     

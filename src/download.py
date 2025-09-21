@@ -1,8 +1,14 @@
 import argparse
+import logging
+import logging.config
+import os
 from lib.socket_tp import SocketTP
 from lib.constants import ERROR_RECOVERY_PROTOCOL_MAPPING, DEFAULT_HOST, DEFAULT_PORT, ClientMode
 from lib.validations import download_validations
-from time import sleep
+
+logging.config.fileConfig("./lib/logging.conf")
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -18,18 +24,28 @@ def main():
     args = parser.parse_args()
     download_validations(args)
 
-    print(f"Descargando el archivo '{args.name}' de {args.host}:{args.port} a '{args.dst}'")
+    logger.info(f"Descargando el archivo '{args.name}' de {args.host}:{args.port} a '{args.dst}'")
+    
+    if args.verbose:
+        logging.getLogger("socket").setLevel(logging.DEBUG)
+    
+    s = SocketTP()
+    s.connect(
+        args.host,
+        args.port,
+        args.name,
+        ERROR_RECOVERY_PROTOCOL_MAPPING[args.protocol],
+        ClientMode.DOWNLOAD
+    )
+    size = s.recv(4)
+    int_size = int.from_bytes(size, "big")
+    data = s.recv(int_size)
+    
+    file_path = os.path.join(args.dst, args.name) if os.path.isdir(args.dst) else args.dst
+    with open(file_path, "wb") as f:
+        f.write(data)
+    s.close()
 
-    # TODO: Implementar la lógica de descarga de archivo
-    # s = SocketTP()
-    # s.connect(
-    #     args.host,
-    #     args.port,
-    #     args.name,
-    #     ERROR_RECOVERY_PROTOCOL_MAPPING[args.protocol],
-    #     ClientMode.DOWNLOAD
-    # )
-    # ...
 
 if __name__ == '__main__':
     main()

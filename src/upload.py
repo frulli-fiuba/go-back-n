@@ -24,13 +24,11 @@ def main():
     args = parser.parse_args()
     upload_validations(args)
 
-    # Si no se especifica un nombre, se usa el del archivo de origen.
-    filename = args.name if args.name else args.src.split('/')[-1]
+    logger.info(f"Subiendo el archivo '{args.name}' desde '{args.src}' a {args.host}:{args.port}")
 
-    print(f"Subiendo el archivo '{filename}' desde '{args.src}' a {args.host}:{args.port}")
     if args.verbose:
         logging.getLogger("socket").setLevel(logging.DEBUG)
-    # TODO: Implementar la lógica de subida de archivo, idealmente en nueva función y con los parámetros correspondientes.
+
     s = SocketTP()
     s.connect(
         args.host,
@@ -39,11 +37,19 @@ def main():
         ERROR_RECOVERY_PROTOCOL_MAPPING[args.protocol],
         ClientMode.UPLOAD
     )
-    size = s.recv(4)
-    int_size = int.from_bytes(size, "big")
-    data = s.recv(int_size)
-    with open(f"../assets/recibo.png", "wb") as f:
-        f.write(data)
-    s.close()
+
+    with open(args.src, "rb") as f:
+        data = f.read()
+    size_bytes = len(data).to_bytes(4, "big")
+    try:
+        logger.debug(f"Enviando {len(data)} bytes al servidor...")
+        s.sendall(size_bytes)
+        s.sendall(data)
+        logger.info(f"Archivo '{args.name}' enviado correctamente al servidor.")
+    finally:
+        logger.debug("Conexión cerrada.")
+        s.close()
+
+
 if __name__ == '__main__':
     main()
