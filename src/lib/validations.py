@@ -5,8 +5,6 @@ import logging
 import logging.config
 from lib.constants import ERROR_RECOVERY_PROTOCOL_MAPPING
 
-logging.config.fileConfig("./lib/logging.conf")
-
 logger = logging.getLogger(__name__)
 
 
