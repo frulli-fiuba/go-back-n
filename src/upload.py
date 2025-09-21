@@ -1,8 +1,9 @@
 import argparse
 import logging
 import logging.config
+from lib.file_transfer import send_file
 from lib.validations import upload_validations
-from lib.constants import ERROR_RECOVERY_PROTOCOL_MAPPING, DEFAULT_HOST, DEFAULT_PORT
+from lib.constants import ERROR_RECOVERY_PROTOCOL_MAPPING, DEFAULT_HOST, DEFAULT_PORT, ClientMode
 
 logging.config.fileConfig("./lib/logging.conf")
 
@@ -24,20 +25,29 @@ def main():
     args = parser.parse_args()
     upload_validations(args)
 
-    # Si no se especifica un nombre, se usa el del archivo de origen.
-    filename = args.name if args.name else args.src.split('/')[-1]
+    logger.info(f"Subiendo el archivo '{args.name}' desde '{args.src}' a {args.host}:{args.port}")
 
-    print(f"Subiendo el archivo '{filename}' desde '{args.src}' a {args.host}:{args.port}")
     if args.verbose:
         logging.getLogger("socket").setLevel(logging.DEBUG)
-    # TODO: Implementar la lógica de subida de archivo, idealmente en nueva función y con los parámetros correspondientes.
+
     s = SocketTP()
-    s.connect(args.host, args.port, ERROR_RECOVERY_PROTOCOL_MAPPING[args.protocol])
-    size = s.recv(4)
-    int_size = int.from_bytes(size)
-    data = s.recv(int_size)
-    with open(f"/home/federico-rulli/Pictures/Screenshots/{args.name}", "wb") as f:
-        f.write(data)
+    s.connect(
+        args.host,
+        args.port,
+        ERROR_RECOVERY_PROTOCOL_MAPPING[args.protocol],
+    )
+
+    s.sendall(ClientMode.UPLOAD.value.to_bytes(4, "big"))
+    
+    name_b = args.name.encode("utf-8")
+    s.sendall(len(name_b).to_bytes(4, "big"))
+    s.sendall(name_b)
+
+    send_file(s, args.src)
+
+    logger.info("Fin de la subida, cerrando socket.")
     s.close()
+
+
 if __name__ == '__main__':
     main()

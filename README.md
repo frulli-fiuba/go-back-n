@@ -1,13 +1,19 @@
 # TP 1 - Redes
 
-Correr el server:
+**Correr el server:**
 
-```
+```bash
 cd ./src && python3 start-server.py -v -s ../assets
 ```
 
-Correr upload:
+**Descargar desde el servidor:**
 
+```bash
+cd ./src && python3 download.py -v -d ../assets/recibido-desde-servidor.png -n upload-test.png
 ```
-cd ./src && python3 upload.py -v -s ../assets/upload-test.png -n hola
+
+**Correr upload:**
+
+```bash
+cd ./src && python3 upload.py -v -s ../assets/upload-test.png -n recibido-desde-upload.png
 ```
