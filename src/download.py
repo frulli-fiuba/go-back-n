@@ -46,7 +46,7 @@ def main():
 
     s.close()
 
-    logger.info(f"Archivo '{args.name}' descargado correctamente del servidor.")
+    logger.info("Fin de la descarga.")
 
 
 if __name__ == '__main__':

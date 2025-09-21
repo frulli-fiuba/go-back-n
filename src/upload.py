@@ -45,7 +45,7 @@ def main():
 
     send_file(s, args.src)
 
-    logger.info(f"Archivo '{args.name}' enviado correctamente al servidor.")
+    logger.info("Fin de la subida.")
 
 
 if __name__ == '__main__':

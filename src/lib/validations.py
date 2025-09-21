@@ -2,9 +2,8 @@ import os
 import socket
 import sys
 import logging
-from lib.constants import ERROR_RECOVERY_PROTOCOL_MAPPING
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("root")
 
 
 def validate_host(host):
@@ -89,10 +88,7 @@ def validate_destination_dir(dest_path):
         return False
     
     # Si es un archivo, validar el directorio padre
-    if os.path.isfile(dest_path):
-        dest_dir = os.path.dirname(dest_path)
-    else:
-        dest_dir = dest_path
+    dest_dir = os.path.dirname(dest_path) if os.path.splitext(dest_path)[1] else dest_path
     
     if not os.path.exists(dest_dir):
         return False
@@ -102,7 +98,7 @@ def validate_destination_dir(dest_path):
     
     if not os.access(dest_dir, os.W_OK):
         return False
-    
+
     return True
 
 
@@ -141,7 +137,7 @@ def server_validations(args):
 
 
 def upload_validations(args):
-    """Validaciones para upload: base + src + name + protocol."""
+    """Validaciones para upload: base + src + name."""
     errors = _base_validations(args)
     
     if hasattr(args, 'src') and not validate_src_file(args.src):
@@ -170,7 +166,7 @@ def upload_validations(args):
 
 
 def download_validations(args):
-    """Validaciones para download: base + destination + name + protocol."""
+    """Validaciones para download: base + destination + name."""
     errors = _base_validations(args)
     dest_attr = 'dst' if hasattr(args, 'dst') else 'destination'
     if hasattr(args, dest_attr):
