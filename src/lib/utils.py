@@ -113,7 +113,9 @@ class Window:
 
 class Timer:
     def __init__(self):
+        self.start_time = None
         self.limit_time = None
+        self.rtt = 1
         self.lock = Lock()
 
     def stop(self):
@@ -121,11 +123,16 @@ class Timer:
             self.limit_time = None
 
     def is_expired(self) -> bool:
-        return self.limit_time and datetime.now() > self.limit_time
+        with self.lock:
+            return self.limit_time and datetime.now() > self.limit_time
     
     def is_set(self) -> bool:
         return bool(self.limit_time)
     
     def set(self):
         with self.lock:
-            self.limit_time = datetime.now() + timedelta(seconds=0.05)
+            if self.start_time:
+                self.rtt = (1 - 0.125) * self.rtt + 0.125 * (datetime.now() - self.start_time).seconds
+            
+            self.start_time = datetime.now()
+            self.limit_time = datetime.now() + timedelta(seconds=self.rtt)

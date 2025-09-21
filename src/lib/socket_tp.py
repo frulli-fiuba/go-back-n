@@ -63,7 +63,7 @@ class SocketTP:
         if packet.seq_number > self.sequence.ack:
             self.window.increase(packet.seq_number - self.sequence.ack)
             self.sequence.ack = packet.seq_number
-        else:
+        elif packet.seq_number == self.sequence.ack:
             repeated_ack[packet.seq_number] += 1
             if repeated_ack[packet.seq_number] > self.repeat_threshold:
                 logger.debug(f"REPEATED ACK {packet.seq_number}: {repeated_ack[packet.seq_number]} RESENDING")
@@ -129,8 +129,9 @@ class SocketTP:
                     self.connection_being_accepted = None
             except:
                 pass
-            
+ 
         new_socket = SocketTP()
+
         new_socket.socket = socket_connection
         new_socket.dest_addr = addr
         new_socket._set_error_recovery_mode(mode)
@@ -200,6 +201,7 @@ class SocketTP:
     def recv(self, size: int) -> bytes:
         validate_type("size", size, int)
         buffer = b''
+        started = datetime.now()
         while True:
             try:
                 packet = self.packet_queue.get(timeout=self.CONNECTION_TIMEOUT)
@@ -208,6 +210,7 @@ class SocketTP:
             
             buffer += packet.data
             if len(buffer) == size:
+                logger.debug(f"Downloaded in {(datetime.now() - started).seconds / 60} minutes")
                 return buffer
 
     def _set_error_recovery_mode(self, mode: ErrorRecoveryMode):
