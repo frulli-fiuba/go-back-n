@@ -2,8 +2,6 @@ import os
 import socket
 import sys
 import logging
-import logging.config
-from lib.constants import ERROR_RECOVERY_PROTOCOL_MAPPING
 
 logger = logging.getLogger(__name__)
 
