@@ -40,7 +40,7 @@ def main():
         ClientMode.UPLOAD
     )
     size = s.recv(4)
-    int_size = int.from_bytes(size)
+    int_size = int.from_bytes(size, "big")
     data = s.recv(int_size)
     with open(f"../assets/recibo.png", "wb") as f:
         f.write(data)

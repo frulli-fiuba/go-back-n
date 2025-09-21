@@ -12,7 +12,7 @@ from lib.socket_tp import SocketTP
 logger = logging.getLogger(__name__)
 
 def send_file(socket: SocketTP):
-    with open("./test.png", "rb") as f:
+    with open("../assets/upload-test.png", "rb") as f:
         data = f.read()
         size = len(data)
         try:
