@@ -1,6 +1,7 @@
 import argparse
 import logging
 import logging.config
+from lib.file_transfer import send_file
 from lib.validations import upload_validations
 from lib.constants import ERROR_RECOVERY_PROTOCOL_MAPPING, DEFAULT_HOST, DEFAULT_PORT, ClientMode
 
@@ -38,17 +39,9 @@ def main():
         ClientMode.UPLOAD
     )
 
-    with open(args.src, "rb") as f:
-        data = f.read()
-    size_bytes = len(data).to_bytes(4, "big")
-    try:
-        logger.debug(f"Enviando {len(data)} bytes al servidor...")
-        s.sendall(size_bytes)
-        s.sendall(data)
-        logger.info(f"Archivo '{args.name}' enviado correctamente al servidor.")
-    finally:
-        logger.debug("Conexión cerrada.")
-        s.close()
+    send_file(s, args.src)
+
+    logger.info(f"Archivo '{args.name}' enviado correctamente al servidor.")
 
 
 if __name__ == '__main__':

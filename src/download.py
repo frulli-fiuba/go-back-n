@@ -1,10 +1,10 @@
 import argparse
 import logging
 import logging.config
-import os
 from lib.socket_tp import SocketTP
 from lib.constants import ERROR_RECOVERY_PROTOCOL_MAPPING, DEFAULT_HOST, DEFAULT_PORT, ClientMode
 from lib.validations import download_validations
+from lib.file_transfer import recv_file
 
 logging.config.fileConfig("./lib/logging.conf")
 
@@ -37,14 +37,10 @@ def main():
         ERROR_RECOVERY_PROTOCOL_MAPPING[args.protocol],
         ClientMode.DOWNLOAD
     )
-    size = s.recv(4)
-    int_size = int.from_bytes(size, "big")
-    data = s.recv(int_size)
     
-    file_path = os.path.join(args.dst, args.name) if os.path.isdir(args.dst) else args.dst
-    with open(file_path, "wb") as f:
-        f.write(data)
-    s.close()
+    recv_file(s, args.dst, args.name)
+
+    logger.info(f"Archivo '{args.name}' descargado correctamente del servidor.")
 
 
 if __name__ == '__main__':

@@ -15,5 +15,5 @@ cd ./src && python3 download.py -v -d ../assets/recibido-desde-servidor.png -n u
 **Correr upload:**
 
 ```bash
-python3 upload.py -v -s ../assets/upload-test.png -n recibido-desde-upload.png
+cd ./src && python3 upload.py -v -s ../assets/upload-test.png -n recibido-desde-upload.png
 ```
