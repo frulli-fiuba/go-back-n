@@ -1,5 +1,5 @@
 from typing import Any
-from threading import Lock
+from threading import Lock, Condition
 from datetime import datetime, timedelta
 from enum import Enum
 import logging
@@ -85,6 +85,7 @@ class Window:
         self._size = size
         self._actual_size = size
         self.lock = Lock()
+        self.empty_window = Condition()
 
     def decrease(self, size: int):
         with self.lock:
@@ -96,7 +97,9 @@ class Window:
         with self.lock:
             old_size = self._actual_size
             self._actual_size += size
-            logger.debug(f'Window size, from {old_size} to {self._actual_size} - INCREASE')      
+            logger.debug(f'Window size, from {old_size} to {self._actual_size} - INCREASE')
+        with self.empty_window:
+            self.empty_window.notify()      
     
     @property
     def size(self)->int:
@@ -109,6 +112,8 @@ class Window:
             old_size = self._actual_size
             self._actual_size = self._size
             logger.debug(f'Window size, from {old_size} to {self._actual_size} - RESET')  
+            with self.empty_window:
+                self.empty_window.notify()
 
 
 class Timer:

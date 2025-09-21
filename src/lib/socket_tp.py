@@ -185,6 +185,9 @@ class SocketTP:
             else:
                 if not self.timer.is_set():
                     self.timer.set()
+                with self.window.empty_window: # si la ventana esta vacia libero el GIL
+                    if not self.window.empty_window.wait(timeout=self.CONNECTION_TIMEOUT):
+                        raise Exception("TIME OUT")
             
             with self.sequence.lock:
                 if sequence > self.sequence._send:
