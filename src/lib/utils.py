@@ -1,26 +1,37 @@
 from typing import Any
 from threading import Lock, Condition
 from datetime import datetime, timedelta
-from enum import Enum
+from .constants import ErrorRecoveryMode, ClientMode
+from typing import Any, Tuple
 import logging
 
 logger = logging.getLogger("socket")
 
 
-class ErrorRecoveryMode(Enum):
-    GO_BACK_N = 1
-    STOP_AND_WAIT = 2
-
-
-ERROR_RECOVERY_PROTOCOL_MAPPING = {
-    "GO_BACK_N": ErrorRecoveryMode.GO_BACK_N,
-    "STOP_AND_WAIT": ErrorRecoveryMode.STOP_AND_WAIT
-}
-
-
 def validate_type(name: str, value: Any, type_to_validate: type):
     if not isinstance(value,type_to_validate):
         raise ValueError(f"{name} should be of type {type_to_validate}")
+
+
+def build_syn_payload(mode: ErrorRecoveryMode) -> bytes:
+    """
+    Formato:
+      - 4 bytes: mode (big-endian uint32)
+    """
+    return mode.value.to_bytes(4, "big")
+
+
+def parse_syn_payload(data: bytes) -> Tuple[ErrorRecoveryMode]:
+    """
+    Parsea el payload del SYN.
+    Formato:
+      - 4 bytes: mode (big-endian uint32)
+    """
+    if len(data) < 4:
+        raise ValueError("syn payload too short")
+    
+    mode_val = int.from_bytes(data[:4], "big")
+    return ErrorRecoveryMode(mode_val)
 
 
 class Packet:

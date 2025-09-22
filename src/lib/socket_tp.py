@@ -1,5 +1,6 @@
 from socket import socket, AF_INET, SOCK_DGRAM
-from .utils import Packet, Window, Timer, Sequence, ErrorRecoveryMode, validate_type
+from .constants import ErrorRecoveryMode, ClientMode
+from .utils import Packet, Window, Timer, Sequence, validate_type, build_syn_payload, parse_syn_payload
 import queue
 import logging
 from threading import Thread
@@ -36,18 +37,18 @@ class SocketTP:
         self.repeat_threshold = 0
 
     def _process_syn(self, addr: str, packet: Packet):     
-        logger.debug(f'{addr} - {packet} - SYN RECEIVED')   
+        logger.debug(f'{addr} - {packet} - SYN RECEIVED')
+        
+        # SYN inicial sin ACK: cliente solicitando conexión
         if not packet.ack and addr != self.connection_being_accepted and self.connection_queue:
             try:
-                data = int.from_bytes(packet.data)
-                mode = ErrorRecoveryMode(data)
-            except ValueError:
-                logger.error(f"{addr} invalid mode: {data} IGNORED")
-            
-            logger.debug(f"Added {addr} mode: {mode.name} to the connection queue")
-            
+                mode = parse_syn_payload(packet.data)
+            except ValueError as e:
+                logger.error(f"{addr} invalid mode: {e} - IGNORED")
+                return
+
+            logger.debug(f"Added {addr} mode: {mode.name}, to the connection queue")
             self.connection_queue.put((addr, mode))
-        
         elif packet.syn and packet.ack:
             self.socket.sendto(Packet(ack=True).to_bytes(), addr)
             self.dest_addr = addr          
@@ -137,8 +138,11 @@ class SocketTP:
         new_socket._set_error_recovery_mode(mode)
         new_socket.process_incoming_thread.start()
         new_socket.timer_thread.start()
+
+        logger.debug(f"Connection established successfully with {addr} mode: {mode.name}")
+
         return new_socket
-    
+
     def connect(self, host: str, port: int, mode: ErrorRecoveryMode = ErrorRecoveryMode.GO_BACK_N):
         validate_type("host", host, str)
         validate_type("port", port, int)
@@ -153,12 +157,16 @@ class SocketTP:
         while not self.dest_addr:
             if datetime.now() > time_limit:
                 raise Exception("TIME OUT")
-            self.socket.sendto(Packet(syn=True, data=mode.value.to_bytes()).to_bytes(), (host, port))
+
+            self.socket.sendto(
+                Packet(syn=True, data=build_syn_payload(mode)).to_bytes(),
+                (host, port)
+            )
             sleep(self.SOCKET_TIMEOUT)
         
         self._set_error_recovery_mode(mode)
-        
-        logger.debug(f"Connection established successflully with {host}:{port}")       
+
+        logger.debug(f"Connection established successfully with {host}:{port}")
 
     def sendall(self, data: bytes):
         validate_type("data", data, bytes)
