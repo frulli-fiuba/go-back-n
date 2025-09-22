@@ -23,29 +23,30 @@ def main():
     
     args = parser.parse_args()
     download_validations(args)
-
-    logger.info(f"Descargando el archivo '{args.name}' de {args.host}:{args.port} a '{args.dst}'")
     
     if args.verbose:
         logging.getLogger("socket").setLevel(logging.DEBUG)
+    if args.quiet:
+        logging.getLogger("socket").setLevel(logging.ERROR)
+        logger.setLevel(logging.ERROR)
     
-    s = SocketTP()
-    s.connect(
-        args.host,
-        args.port,
-        ERROR_RECOVERY_PROTOCOL_MAPPING[args.protocol],
-    )
+    logger.info(f"Descargando el archivo '{args.name}' de {args.host}:{args.port} a '{args.dst}'")
+    
+    with SocketTP() as s:
+        s.connect(
+            args.host,
+            args.port,
+            ERROR_RECOVERY_PROTOCOL_MAPPING[args.protocol],
+        )
 
-    s.sendall(ClientMode.DOWNLOAD.value.to_bytes(4, "big"))
+        s.sendall(ClientMode.DOWNLOAD.value.to_bytes(4, "big"))
 
-    name_b = args.name.encode("utf-8")
-    s.sendall(len(name_b).to_bytes(4, "big"))
-    s.sendall(name_b)
+        name_b = args.name.encode("utf-8")
+        s.sendall(len(name_b).to_bytes(4, "big"))
+        s.sendall(name_b)
 
-    recv_file(s, args.dst, args.name)
-
-    s.close()
-    logger.info("Fin de la descarga, cerrando socket.")
+        recv_file(s, args.dst, args.name)
+        logger.info("Fin de la descarga, cerrando socket.")
 
 
 if __name__ == '__main__':

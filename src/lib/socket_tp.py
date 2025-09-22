@@ -36,6 +36,12 @@ class SocketTP:
         self.connection_accepted = False
         self.repeat_threshold = 0
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+
     def _process_syn(self, addr: str, packet: Packet):     
         logger.debug(f'{addr} - {packet} - SYN RECEIVED')
         

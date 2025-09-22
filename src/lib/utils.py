@@ -71,7 +71,8 @@ class Sequence:
     
     @property
     def ack(self):
-        return self._ack
+        with self.lock:
+            return self._ack
 
     @send.setter
     def send(self, send: int):
@@ -88,7 +89,8 @@ class Sequence:
             self._send = self._ack
     
     def are_equal(self):
-        return self._send == self._ack
+        with self.lock:
+            return self._send == self._ack
 
 
 class Window:
@@ -114,7 +116,8 @@ class Window:
     
     @property
     def size(self)->int:
-        return self._actual_size
+        with self.lock:
+            return self._actual_size
     
     def reset(self, window_size: int = None):
         with self.lock:
@@ -143,7 +146,8 @@ class Timer:
             return self.limit_time and datetime.now() > self.limit_time
     
     def is_set(self) -> bool:
-        return bool(self.limit_time)
+        with self.lock:
+            return bool(self.limit_time)
     
     def set(self):
         with self.lock:

@@ -60,11 +60,14 @@ def main():
     args = parser.parse_args()
     server_validations(args)
 
-    logger.info(f"Iniciando el servidor en {args.host}:{args.port} con el directorio de almacenamiento en '{args.storage}'")
-
     if args.verbose:
         logging.getLogger("socket").setLevel(logging.DEBUG)
-
+    if args.quiet:
+        logging.getLogger("socket").setLevel(logging.ERROR)
+        logger.setLevel(logging.ERROR)
+    
+    logger.info(f"Iniciando el servidor en {args.host}:{args.port} con el directorio de almacenamiento en '{args.storage}'")
+    
     s = SocketTP()
     s.bind(args.host, args.port)
     s.listen()
