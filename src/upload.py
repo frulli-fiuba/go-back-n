@@ -24,30 +24,31 @@ def main():
     
     args = parser.parse_args()
     upload_validations(args)
-
-    logger.info(f"Subiendo el archivo '{args.name}' desde '{args.src}' a {args.host}:{args.port}")
-
+    
     if args.verbose:
         logging.getLogger("socket").setLevel(logging.DEBUG)
-
-    s = SocketTP()
-    s.connect(
-        args.host,
-        args.port,
-        ERROR_RECOVERY_PROTOCOL_MAPPING[args.protocol],
-    )
-
-    s.sendall(ClientMode.UPLOAD.value.to_bytes(4, "big"))
+    if args.quiet:
+        logging.getLogger("socket").setLevel(logging.ERROR)
+        logger.setLevel(logging.ERROR)
     
-    name_b = args.name.encode("utf-8")
-    s.sendall(len(name_b).to_bytes(4, "big"))
-    s.sendall(name_b)
+    logger.info(f"Subiendo el archivo '{args.name}' desde '{args.src}' a {args.host}:{args.port}")
 
-    send_file(s, args.src)
+    with SocketTP() as s:
+        s.connect(
+            args.host,
+            args.port,
+            ERROR_RECOVERY_PROTOCOL_MAPPING[args.protocol],
+        )
+        s.sendall(ClientMode.UPLOAD.value.to_bytes(4, "big"))
+    
+        name_b = args.name.encode("utf-8")
+        s.sendall(len(name_b).to_bytes(4, "big"))
+        s.sendall(name_b)
 
-    logger.info("Fin de la subida, cerrando socket.")
-    s.close()
+        send_file(s, args.src)
 
+        logger.info("Fin de la subida, cerrando socket.")
+    
 
 if __name__ == '__main__':
     main()

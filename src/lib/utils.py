@@ -71,7 +71,8 @@ class Sequence:
     
     @property
     def ack(self):
-        return self._ack
+        with self.lock:
+            return self._ack
 
     @send.setter
     def send(self, send: int):
@@ -88,7 +89,8 @@ class Sequence:
             self._send = self._ack
     
     def are_equal(self):
-        return self._send == self._ack
+        with self.lock:
+            return self._send == self._ack
 
 
 class Window:
@@ -114,7 +116,8 @@ class Window:
     
     @property
     def size(self)->int:
-        return self._actual_size
+        with self.lock:
+            return self._actual_size
     
     def reset(self, window_size: int = None):
         with self.lock:
@@ -131,7 +134,7 @@ class Timer:
     def __init__(self):
         self.start_time = None
         self.limit_time = None
-        self.rtt = 1
+        self.estimated_round_trip_time = 1
         self.lock = Lock()
 
     def stop(self):
@@ -143,12 +146,14 @@ class Timer:
             return self.limit_time and datetime.now() > self.limit_time
     
     def is_set(self) -> bool:
-        return bool(self.limit_time)
+        with self.lock:
+            return bool(self.limit_time)
     
     def set(self):
         with self.lock:
+            now = datetime.now()
             if self.start_time:
-                self.rtt = (1 - 0.125) * self.rtt + 0.125 * (datetime.now() - self.start_time).seconds
+                self.estimated_round_trip_time = (1 - 0.125) * self.estimated_round_trip_time + 0.125 * (now - self.start_time).seconds
             
-            self.start_time = datetime.now()
-            self.limit_time = datetime.now() + timedelta(seconds=self.rtt)
+            self.start_time = now
+            self.limit_time = self.start_time + timedelta(seconds=self.estimated_round_trip_time)

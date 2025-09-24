@@ -1,5 +1,5 @@
 from socket import socket, AF_INET, SOCK_DGRAM
-from .constants import ErrorRecoveryMode, ClientMode
+from .constants import ErrorRecoveryMode
 from .utils import Packet, Window, Timer, Sequence, validate_type, build_syn_payload, parse_syn_payload
 import queue
 import logging
@@ -13,11 +13,10 @@ logger = logging.getLogger("socket")
 
 
 class SocketTP:
-    PACKET_SIZE = 1450
+    PACKET_DATA_SIZE = 1400
     CONNECTION_TIMEOUT = 30
     SOCKET_TIMEOUT = 1
-    GO_BACK_N_WINDOW = 100 * PACKET_SIZE
-    STOP_AND_WAIT_WINDOW = PACKET_SIZE
+    GO_BACK_N_WINDOW = 100 * PACKET_DATA_SIZE
 
     def __init__(self):
         self.host = None
@@ -25,7 +24,7 @@ class SocketTP:
         self.connection_queue = None
         self.dest_addr = None
         self.end_connection = False
-        self.window = Window(self.PACKET_SIZE)
+        self.window = Window(self.PACKET_DATA_SIZE)
         self.timer = Timer()
         self.sequence = Sequence()
         self.packet_queue = queue.Queue()
@@ -35,6 +34,12 @@ class SocketTP:
         self.connection_being_accepted = None
         self.connection_accepted = False
         self.repeat_threshold = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
 
     def _process_syn(self, addr: str, packet: Packet):     
         logger.debug(f'{addr} - {packet} - SYN RECEIVED')
@@ -88,7 +93,7 @@ class SocketTP:
         repeated_ack = defaultdict(int)
         while not self.end_connection:
             try:
-                data, addr = self.socket.recvfrom(1500)
+                data, addr = self.socket.recvfrom(self.PACKET_DATA_SIZE + 7) # el tamanio maximo de datos mas los flags
                 packet = Packet.from_bytes(data)
                 if packet.syn:
                     self._process_syn(addr, packet)
@@ -123,7 +128,7 @@ class SocketTP:
         while self.connection_being_accepted:
             try:
                 socket_connection.sendto(Packet(syn=True, ack=True).to_bytes(), addr)
-                data, recv_addr = socket_connection.recvfrom(self.PACKET_SIZE)
+                data, recv_addr = socket_connection.recvfrom(self.PACKET_DATA_SIZE)
                 packet = Packet.from_bytes(data)
                 logger.debug(f'{addr} - {packet}')
                 if recv_addr == addr and packet.ack:
@@ -179,7 +184,7 @@ class SocketTP:
             if datetime.now() > time_limit:
                 raise Exception("TIME OUT")
             start = sequence - offset
-            end = start + min(self.PACKET_SIZE, self.window.size, len(data[start:]))
+            end = start + min(self.PACKET_DATA_SIZE, self.window.size, len(data[start:]))
             if data[start: end]:
                 packet = Packet(data=data[start: end], seq_number=sequence)
                 self.socket.sendto(packet.to_bytes(), self.dest_addr)
@@ -193,7 +198,7 @@ class SocketTP:
             else:
                 if not self.timer.is_set():
                     self.timer.set()
-                with self.window.empty_window: # si la ventana esta vacia libero el GIL
+                with self.window.empty_window: # esperamos hasta q tengamos lugar en la ventana
                     if not self.window.empty_window.wait(timeout=self.CONNECTION_TIMEOUT):
                         raise Exception("TIME OUT")
             
@@ -217,7 +222,7 @@ class SocketTP:
             try:
                 packet = self.packet_queue.get(timeout=self.CONNECTION_TIMEOUT)
             except queue.Empty:
-                raise Exception("Time Out")
+                raise Exception("TIME OUT")
             
             buffer += packet.data
             if len(buffer) == size:
@@ -228,7 +233,8 @@ class SocketTP:
         new_window_size = self.GO_BACK_N_WINDOW
         repeat_threashold = 2
         if mode == ErrorRecoveryMode.STOP_AND_WAIT:
-            new_window_size = self.STOP_AND_WAIT_WINDOW
+            # mandamos un solo paquete y esperamos ack
+            new_window_size = self.PACKET_DATA_SIZE 
             repeat_threashold = 0
         
         self.window.reset(new_window_size)
