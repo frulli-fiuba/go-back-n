@@ -134,7 +134,7 @@ class Timer:
     def __init__(self):
         self.start_time = None
         self.limit_time = None
-        self.rtt = 1
+        self.estimated_round_trip_time = 1
         self.lock = Lock()
 
     def stop(self):
@@ -151,8 +151,9 @@ class Timer:
     
     def set(self):
         with self.lock:
+            now = datetime.now()
             if self.start_time:
-                self.rtt = (1 - 0.125) * self.rtt + 0.125 * (datetime.now() - self.start_time).seconds
+                self.estimated_round_trip_time = (1 - 0.125) * self.estimated_round_trip_time + 0.125 * (now - self.start_time).seconds
             
-            self.start_time = datetime.now()
-            self.limit_time = datetime.now() + timedelta(seconds=self.rtt)
+            self.start_time = now
+            self.limit_time = self.start_time + timedelta(seconds=self.estimated_round_trip_time)
