@@ -34,6 +34,9 @@ class SocketTP:
         self.connection_being_accepted = None
         self.connection_accepted = False
         self.repeat_threshold = 0
+        self.fin_sent = False
+        self.fin_acked = False
+        self.peer_fin_ack_sent = False
 
     def __enter__(self):
         return self
@@ -92,13 +95,21 @@ class SocketTP:
         self.socket.settimeout(self.SOCKET_TIMEOUT)
         repeated_ack = defaultdict(int)
         while not self.end_connection:
+            if self.fin_acked and self.peer_fin_ack_sent:
+                self.end_connection = True
+                continue
             try:
                 data, addr = self.socket.recvfrom(self.PACKET_DATA_SIZE + 7) # el tamanio maximo de datos mas los flags
                 packet = Packet.from_bytes(data)
-                if packet.syn:
+                if packet.syn and not self.end_connection:
                     self._process_syn(addr, packet)
+                elif packet.fin:
+                    self._process_fin()
                 elif packet.ack:
-                    self._process_ack(addr, packet, repeated_ack)
+                    if not self.fin_sent:
+                        self._process_ack(addr, packet, repeated_ack) 
+                    else:
+                        self.fin_acked = True    
                 else:
                     if packet.seq_number == self.received_ack:
                         logger.debug(f'{addr} - {packet} - ACCEPTED')
@@ -110,6 +121,7 @@ class SocketTP:
                     self.socket.sendto(Packet(ack=True, seq_number=self.received_ack).to_bytes(), addr)
             except Exception:
                 pass
+        self._cleanup()   
 
     def bind(self, host: str, port: int):
         validate_type("host", host, str)
@@ -240,68 +252,36 @@ class SocketTP:
         self.window.reset(new_window_size)
         self.repeat_threshold = repeat_threashold
         
-    #TODO falta implementar procesamiento del fin afuera de este close    
+
     def close(self):
-        """
-        four-way handshake for connection termination
-        """
-        if not self.dest_addr:
-            self._cleanup()
-            return
-        
-        logger.debug(f"Initiating connection close with {self.dest_addr}")
-        
-        fin_packet = Packet(fin=True, seq_number=self.sequence.send)
-        self.socket.sendto(fin_packet.to_bytes(), self.dest_addr)
-        logger.debug(f'{self.dest_addr} - {fin_packet} - FIN SENT')
-        
-        fin_timeout = datetime.now() + timedelta(seconds=self.CONNECTION_TIMEOUT)
-        fin_acked = False
-        fin_received = False
-        
-        while not (fin_acked and fin_received):
-            if datetime.now() > fin_timeout:
-                logger.warning("FIN-ACK timeout, forcing closure")
-                break
-            #TODO agregar caso de fin y ack en simultaneo    
-            try:
-                data, addr = self.socket.recvfrom(1500)
-                    
-                packet = Packet.from_bytes(data)
-                logger.debug(f'{addr} - {packet} - RECEIVED during closure')
-                
-                if packet.ack and packet.seq_number == self.sequence.send + 1:
-                    fin_acked = True
-                    logger.debug(f'{addr} - FIN ACK received')
-                    self.sequence.ack = packet.seq_number
-                    
-                elif packet.fin and packet.seq_number == self.sequence.send :
-                    logger.debug(f'{addr} - Peer FIN received')
-                    fin_received = True    
-                    ack_packet = Packet(ack=True, seq_number = self.sequence.send + 1)
-                    self.socket.sendto(ack_packet.to_bytes(), self.dest_addr)
-                    logger.debug(f'{addr} - {ack_packet} - ACK for peer FIN SENT')
-         
-            except socket.timeout:
-                if not fin_acked:
-                    fin_packet = Packet(fin=True, seq_number=self.sequence.send)
-                    self.socket.sendto(fin_packet.to_bytes(), self.dest_addr)
-                    logger.debug(f'{self.dest_addr} - {fin_packet} - FIN RESENT')
-                    fin_timeout = datetime.now() + timedelta(seconds=self.CONNECTION_TIMEOUT)
-                    
-        #TODO considerar agregar time wait para fins retrasados
-        
-        self._cleanup()
-        logger.debug(f"Connection with {self.dest_addr} closed successfully")
+        if self.dest_addr:
+            logger.debug(f"Initiating connection close with {self.dest_addr}")
+            fin_packet = Packet(fin=True, seq_number=self.sequence.send)
+            self.socket.sendto(fin_packet.to_bytes(), self.dest_addr)
+            self.fin_sent = True
+            logger.debug(f'{self.dest_addr} - {fin_packet} - FIN SENT')
+        else: 
+            self.end_connection = True
+            if self.process_incoming_thread.is_alive():
+                self.process_incoming_thread.join()   
+
+  
+
+    def _process_fin(self):
+        ack_packet = Packet(ack=True, seq_number=self.sequence.send + 1)
+        self.socket.sendto(ack_packet.to_bytes(), self.dest_addr)
+        self.peer_fin_ack_sent = True
+        logger.debug(f'{self.dest_addr} - {ack_packet} - FIN ACK SENT')
+        if not self.fin_sent:
+            fin_packet = Packet(fin=True, seq_number=self.sequence.send)
+            self.socket.sendto(fin_packet.to_bytes(), self.dest_addr)
+            self.fin_sent = True
+            logger.debug(f'{self.dest_addr} - {fin_packet} - FIN SENT')
+
 
     def _cleanup(self):
         """Clean up resources"""
-        self.end_connection = True
-        
-        if hasattr(self, 'process_incoming_thread') and self.process_incoming_thread.is_alive():
-            self.process_incoming_thread.join(timeout=1)
-        
-        if hasattr(self, 'timer_thread') and self.timer_thread.is_alive():
+        if self.timer_thread.is_alive():
             self.timer_thread.join(timeout=1)
         
         if self.socket:
@@ -318,7 +298,7 @@ class SocketTP:
                 except queue.Empty:
                     break
         
-        if hasattr(self, 'connection_queue'):
+        if getattr(self, 'connection_queue', None) is not None:
             while not self.connection_queue.empty():
                 try:
                     self.connection_queue.get_nowait()
