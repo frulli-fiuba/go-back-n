@@ -53,7 +53,7 @@ class SocketTP:
                 return
 
             logger.debug(f"Added {addr} mode: {mode.name}, to the connection queue")
-            self.connection_queue.put((addr, mode))
+            self.connection_queue.put((addr, mode))    
         elif packet.syn and packet.ack:
             self.socket.sendto(Packet(ack=True).to_bytes(), addr)
             self.dest_addr = addr          
@@ -239,11 +239,90 @@ class SocketTP:
         
         self.window.reset(new_window_size)
         self.repeat_threshold = repeat_threashold
-
-    #TODO add close flux
+        
+    #TODO falta implementar procesamiento del fin afuera de este close    
     def close(self):
-        sleep(1) # por si quedan packetes pendientes de ack
+        """
+        four-way handshake for connection termination
+        """
+        if not self.dest_addr:
+            self._cleanup()
+            return
+        
+        logger.debug(f"Initiating connection close with {self.dest_addr}")
+        
+        fin_packet = Packet(fin=True, seq_number=self.sequence.send)
+        self.socket.sendto(fin_packet.to_bytes(), self.dest_addr)
+        logger.debug(f'{self.dest_addr} - {fin_packet} - FIN SENT')
+        
+        fin_timeout = datetime.now() + timedelta(seconds=self.CONNECTION_TIMEOUT)
+        fin_acked = False
+        fin_received = False
+        
+        while not (fin_acked and fin_received):
+            if datetime.now() > fin_timeout:
+                logger.warning("FIN-ACK timeout, forcing closure")
+                break
+            #TODO agregar caso de fin y ack en simultaneo    
+            try:
+                data, addr = self.socket.recvfrom(1500)
+                    
+                packet = Packet.from_bytes(data)
+                logger.debug(f'{addr} - {packet} - RECEIVED during closure')
+                
+                if packet.ack and packet.seq_number == self.sequence.send + 1:
+                    fin_acked = True
+                    logger.debug(f'{addr} - FIN ACK received')
+                    self.sequence.ack = packet.seq_number
+                    
+                elif packet.fin and packet.seq_number == self.sequence.send :
+                    logger.debug(f'{addr} - Peer FIN received')
+                    fin_received = True    
+                    ack_packet = Packet(ack=True, seq_number = self.sequence.send + 1)
+                    self.socket.sendto(ack_packet.to_bytes(), self.dest_addr)
+                    logger.debug(f'{addr} - {ack_packet} - ACK for peer FIN SENT')
+         
+            except socket.timeout:
+                if not fin_acked:
+                    fin_packet = Packet(fin=True, seq_number=self.sequence.send)
+                    self.socket.sendto(fin_packet.to_bytes(), self.dest_addr)
+                    logger.debug(f'{self.dest_addr} - {fin_packet} - FIN RESENT')
+                    fin_timeout = datetime.now() + timedelta(seconds=self.CONNECTION_TIMEOUT)
+                    
+        #TODO considerar agregar time wait para fins retrasados
+        
+        self._cleanup()
+        logger.debug(f"Connection with {self.dest_addr} closed successfully")
+
+    def _cleanup(self):
+        """Clean up resources"""
         self.end_connection = True
-        self.socket.close()
-        self.process_incoming_thread.join()
-        self.timer_thread.join()
+        
+        if hasattr(self, 'process_incoming_thread') and self.process_incoming_thread.is_alive():
+            self.process_incoming_thread.join(timeout=1)
+        
+        if hasattr(self, 'timer_thread') and self.timer_thread.is_alive():
+            self.timer_thread.join(timeout=1)
+        
+        if self.socket:
+            self.socket.close()
+        
+        self.dest_addr = None
+        self.connection_being_accepted = None
+        self.connection_accepted = False
+        
+        if hasattr(self, 'packet_queue'):
+            while not self.packet_queue.empty():
+                try:
+                    self.packet_queue.get_nowait()
+                except queue.Empty:
+                    break
+        
+        if hasattr(self, 'connection_queue'):
+            while not self.connection_queue.empty():
+                try:
+                    self.connection_queue.get_nowait()
+                except queue.Empty:
+                    break
+        
+        logger.debug("Socket resources cleaned up")

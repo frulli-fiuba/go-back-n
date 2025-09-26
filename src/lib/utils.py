@@ -1,8 +1,7 @@
-from typing import Any
+from typing import Any, Tuple
 from threading import Lock, Condition
 from datetime import datetime, timedelta
 from .constants import ErrorRecoveryMode, ClientMode
-from typing import Any, Tuple
 import logging
 
 logger = logging.getLogger("socket")
@@ -41,7 +40,7 @@ class Packet:
         self.ack = ack
         self.syn = syn
         self.fin = fin
-    
+    #TODO se podrian comprimir los flags en 1 byte para achicar el header
     def to_bytes(self) -> bytes:
         return self.seq_number.to_bytes(4, "big") + self.ack.to_bytes(1, "big") + self.syn.to_bytes(1, "big") + self.fin.to_bytes(1, "big") + self.data
     
