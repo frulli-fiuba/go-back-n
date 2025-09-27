@@ -5,7 +5,6 @@ import queue
 import logging
 from threading import Thread
 from time import sleep
-from collections import defaultdict
 from datetime import datetime, timedelta
 
 
@@ -64,18 +63,13 @@ class SocketTP:
         self.process_incoming_thread.start()
         self.timer_thread.start()
 
-    def _process_ack(self, addr: str, packet: Packet, repeated_ack: dict):
+    def _process_ack(self, addr: str, packet: Packet):
         logger.debug(f'{packet} - RECEIVED from {addr}')
         if packet.seq_number > self.sequence.ack:
             self.window.increase(packet.seq_number - self.sequence.ack)
             self.sequence.ack = packet.seq_number
-        elif packet.seq_number == self.sequence.ack:
-            repeated_ack[packet.seq_number] += 1
-            if repeated_ack[packet.seq_number] > self.repeat_threshold:
-                logger.debug(f"REPEATED ACK {packet.seq_number}: {repeated_ack[packet.seq_number]} RESENDING")
-                self._reset()
-                repeated_ack[packet.seq_number] = 0 
-    
+            self.timer.update_estimated_round_trip_time()
+
     def _reset(self):
         self.sequence.reset()
         self.window.reset()
@@ -90,7 +84,7 @@ class SocketTP:
 
     def _process_incoming(self):
         self.socket.settimeout(self.SOCKET_TIMEOUT)
-        repeated_ack = defaultdict(int)
+
         while not self.end_connection:
             try:
                 data, addr = self.socket.recvfrom(self.PACKET_DATA_SIZE + 7) # el tamanio maximo de datos mas los flags
@@ -98,7 +92,7 @@ class SocketTP:
                 if packet.syn:
                     self._process_syn(addr, packet)
                 elif packet.ack and addr == self.dest_addr:
-                    self._process_ack(addr, packet, repeated_ack)
+                    self._process_ack(addr, packet)
                 else:
                     if packet.seq_number == self.received_ack and addr == self.dest_addr:
                         logger.debug(f'{addr} - {packet} - ACCEPTED')
