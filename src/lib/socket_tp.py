@@ -97,10 +97,10 @@ class SocketTP:
                 packet = Packet.from_bytes(data)
                 if packet.syn:
                     self._process_syn(addr, packet)
-                elif packet.ack:
+                elif packet.ack and addr == self.dest_addr:
                     self._process_ack(addr, packet, repeated_ack)
                 else:
-                    if packet.seq_number == self.received_ack:
+                    if packet.seq_number == self.received_ack and addr == self.dest_addr:
                         logger.debug(f'{addr} - {packet} - ACCEPTED')
                         self.received_ack = self.received_ack + len(packet.data)
                         self.packet_queue.put(packet)
@@ -116,16 +116,45 @@ class SocketTP:
         validate_type("port", port, int)
         self.host = host
         self.socket.bind((host, port))
- 
+    
+    def get_incomming_connection(self):
+        addr = None
+        mode = None
+        
+        while not self.end_connection and not addr:
+            try:
+                addr, mode = self.connection_queue.get(timeout=2)
+            except:
+                # intentamos tomar una conexion entrante,
+                # si en 2 segundos no aparecio ninguna chequeamos si se cerro el socket,
+                # si no se cerro intentamos 2 segundos mas, asi hasta q aparezca algo
+                # o se cierre el socket
+                continue
+        
+        if self.end_connection:
+            raise Exception("Socket Closed")
+        
+        return addr, mode
+
     def accept(self) -> 'SocketTP':
-        addr, mode = self.connection_queue.get()
+        addr = None
+        mode = None
+        
+        addr, mode = self.get_incomming_connection()
+        
         self.connection_being_accepted = addr
         
         socket_connection = socket(AF_INET, SOCK_DGRAM)
         socket_connection.bind((self.host, 0))
         socket_connection.settimeout(self.SOCKET_TIMEOUT)
-
+        
+        time_limit = datetime.now() + timedelta(seconds=self.CONNECTION_TIMEOUT)
         while self.connection_being_accepted:
+            if datetime.now() > time_limit:
+                # si hay timeout buscamos otra conexion entrante
+                addr, mode = self.get_incomming_connection()
+                self.connection_being_accepted = addr
+                time_limit = datetime.now() + timedelta(seconds=self.CONNECTION_TIMEOUT)
             try:
                 socket_connection.sendto(Packet(syn=True, ack=True).to_bytes(), addr)
                 data, recv_addr = socket_connection.recvfrom(self.PACKET_DATA_SIZE)
@@ -134,8 +163,10 @@ class SocketTP:
                 if recv_addr == addr and packet.ack:
                     self.connection_being_accepted = None
             except:
+                # no recibimos nada del socket abierto, 
+                # seguimos esperando hasta el timeout antes de descartarla y buscar otra
                 pass
- 
+        
         new_socket = SocketTP()
 
         new_socket.socket = socket_connection

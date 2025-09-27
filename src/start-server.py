@@ -1,3 +1,6 @@
+import sys
+import tty
+import termios
 import os
 import argparse
 import logging
@@ -12,6 +15,26 @@ logging.config.fileConfig("./lib/logging.conf")
 
 logger = logging.getLogger(__name__)
 
+
+def get_key():
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+
+    try:
+        tty.setraw(fd)
+        key = sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    return key
+
+
+def wait_for_close(socket: SocketTP):
+    key_pressed = None
+    while key_pressed != 'q':
+        logger.info("Persionar `q` para cerrar")
+        key_pressed = get_key()
+    socket.close()
 
 def handle_client(socket: SocketTP, storage_dir: str):
     try:
@@ -72,13 +95,19 @@ def main():
     s.bind(args.host, args.port)
     s.listen()
     threads = []
-    while True:
-        new_socket = s.accept()
-        thread = Thread(target=handle_client, args=(new_socket, args.storage))
-        thread.start()
-        threads.append(thread)
-    
-    s.close()
+    close_thread = Thread(target=wait_for_close, args=(s,))
+    close_thread.start()
+    try:
+        while new_socket := s.accept():
+            thread = Thread(target=handle_client, args=(new_socket, args.storage))
+            thread.start()
+            threads.append(thread)
+    except Exception:
+        logger.info("Cerrando servidor")
 
+    close_thread.join()
+    for thread in threads:
+        thread.join()
+    
 if __name__ == '__main__':
     main()
