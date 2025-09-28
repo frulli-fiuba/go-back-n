@@ -164,4 +164,4 @@ class Timer:
     def set(self):
         with self.lock:
             self.start_time = datetime.now()
-            self.limit_time = self.start_time + timedelta(seconds=max(0.01, self.estimated_round_trip_time + 4 * self.dev_round_trip_time))
+            self.limit_time = self.start_time + timedelta(seconds=max(0.02, self.estimated_round_trip_time + 4 * self.dev_round_trip_time))

@@ -15,7 +15,7 @@ class SocketTP:
     PACKET_DATA_SIZE = 1400
     CONNECTION_TIMEOUT = 30
     SOCKET_TIMEOUT = 1
-    GO_BACK_N_WINDOW = 10 * PACKET_DATA_SIZE
+    GO_BACK_N_WINDOW = 5 * PACKET_DATA_SIZE
 
     def __init__(self):
         self.host = None
