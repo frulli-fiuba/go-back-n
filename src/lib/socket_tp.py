@@ -32,7 +32,6 @@ class SocketTP:
         self.received_ack = 0
         self.connection_being_accepted = None
         self.connection_accepted = False
-        self.repeat_threshold = 0
 
     def __enter__(self):
         return self
@@ -256,14 +255,12 @@ class SocketTP:
 
     def _set_error_recovery_mode(self, mode: ErrorRecoveryMode):
         new_window_size = self.GO_BACK_N_WINDOW
-        repeat_threashold = 2
+
         if mode == ErrorRecoveryMode.STOP_AND_WAIT:
             # mandamos un solo paquete y esperamos ack
             new_window_size = self.PACKET_DATA_SIZE 
-            repeat_threashold = 0
         
         self.window.reset(new_window_size)
-        self.repeat_threshold = repeat_threashold
 
     #TODO add close flux
     def close(self):
