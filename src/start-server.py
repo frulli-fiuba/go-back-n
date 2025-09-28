@@ -10,31 +10,31 @@ from lib.constants import DEFAULT_HOST, DEFAULT_PORT, ClientMode, FILE_NOT_FOUND
 from lib.validations import server_validations
 from lib.socket_tp import SocketTP
 from lib.file_transfer import send_file, recv_file
+import select
 
 logging.config.fileConfig("./lib/logging.conf")
 
 logger = logging.getLogger(__name__)
 
 
-def get_key():
+def wait_for_close(socket):
+    logger.info("Presionar 'q' para cerrar el servidor")
+
     fd = sys.stdin.fileno()
     old_settings = termios.tcgetattr(fd)
-
     try:
-        tty.setraw(fd)
-        key = sys.stdin.read(1)
+        tty.setcbreak(fd)
+        key_pressed = ''
+        while key_pressed.lower() != 'q':
+            rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
+            if rlist:
+                key_pressed = sys.stdin.read(1)
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
-    return key
-
-
-def wait_for_close(socket: SocketTP):
-    key_pressed = None
-    while key_pressed != 'q':
-        logger.info("Persionar `q` para cerrar")
-        key_pressed = get_key()
     socket.close()
+    logger.info("Servidor cerrado.")
+    
 
 def handle_client(socket: SocketTP, storage_dir: str):
     try:

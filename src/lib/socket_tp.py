@@ -15,7 +15,7 @@ class SocketTP:
     PACKET_DATA_SIZE = 1400
     CONNECTION_TIMEOUT = 30
     SOCKET_TIMEOUT = 1
-    GO_BACK_N_WINDOW = 100 * PACKET_DATA_SIZE
+    GO_BACK_N_WINDOW = 10 * PACKET_DATA_SIZE
 
     def __init__(self):
         self.host = None
@@ -68,6 +68,7 @@ class SocketTP:
             self.window.increase(packet.seq_number - self.sequence.ack)
             self.sequence.ack = packet.seq_number
             self.timer.update_estimated_round_trip_time()
+            self.timer.stop()
 
     def _reset(self):
         self.sequence.reset()
@@ -79,8 +80,8 @@ class SocketTP:
             if self.timer.is_expired():
                 logger.debug('Time out: Packet Lost')
                 self._reset()
-            sleep(0.01)
-
+            sleep(0.001)
+        
     def _process_incoming(self):
         self.socket.settimeout(self.SOCKET_TIMEOUT)
 
@@ -204,27 +205,26 @@ class SocketTP:
         fin = False
         time_limit = datetime.now() + timedelta(seconds=self.CONNECTION_TIMEOUT)
         last_ack = None
-        while not fin:
+        while not fin and not self.end_connection:
             if datetime.now() > time_limit:
                 raise Exception("TIME OUT")
             start = sequence - offset
             end = start + min(self.PACKET_DATA_SIZE, self.window.size, len(data[start:]))
             if data[start: end]:
+                if self.sequence.are_equal():
+                    self.timer.set()
+
                 packet = Packet(data=data[start: end], seq_number=sequence)
                 self.socket.sendto(packet.to_bytes(), self.dest_addr)
                 
                 logger.debug(f'{self.dest_addr} - {packet} - SENT')
-                
-                if self.sequence.are_equal():
-                    self.timer.set()
                 
                 self.window.decrease(len(data[start: end]))
             else:
                 if not self.timer.is_set():
                     self.timer.set()
                 with self.window.empty_window: # esperamos hasta q tengamos lugar en la ventana
-                    if not self.window.empty_window.wait(timeout=self.CONNECTION_TIMEOUT):
-                        raise Exception("TIME OUT")
+                    self.window.empty_window.wait(timeout=self.timer.estimated_round_trip_time)
             
             with self.sequence.lock:
                 if sequence > self.sequence._send:
@@ -242,7 +242,7 @@ class SocketTP:
         validate_type("size", size, int)
         buffer = b''
         started = datetime.now()
-        while True:
+        while not self.end_connection:
             try:
                 packet = self.packet_queue.get(timeout=self.CONNECTION_TIMEOUT)
             except queue.Empty:

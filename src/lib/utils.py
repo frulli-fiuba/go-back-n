@@ -1,7 +1,7 @@
 from typing import Any
 from threading import Lock, Condition
 from datetime import datetime, timedelta
-from .constants import ErrorRecoveryMode, ClientMode
+from .constants import ErrorRecoveryMode
 from typing import Any, Tuple
 import logging
 
@@ -134,12 +134,16 @@ class Timer:
     def __init__(self):
         self.start_time = None
         self.limit_time = None
-        self.estimated_round_trip_time = 1
+        self.estimated_round_trip_time = 0.5
+        self.dev_round_trip_time = 0.15
         self.lock = Lock()
+        self.alpha = 0.125
+        self.beta = 0.25
 
     def stop(self):
         with self.lock:
             self.limit_time = None
+            self.start_time = None
 
     def is_expired(self) -> bool:
         with self.lock:
@@ -153,9 +157,11 @@ class Timer:
         with self.lock:
             now = datetime.now()
             if self.start_time:
-                self.estimated_round_trip_time = (1 - 0.125) * self.estimated_round_trip_time + 0.125 * (now - self.start_time).seconds
+                sample = (now - self.start_time).total_seconds()
+                self.estimated_round_trip_time = (1 - self.alpha) * self.estimated_round_trip_time + self.alpha * sample
+                self.dev_round_trip_time = (1 - self.beta) * self.dev_round_trip_time + self.beta * abs(sample - self.estimated_round_trip_time)      
     
     def set(self):
         with self.lock:
             self.start_time = datetime.now()
-            self.limit_time = self.start_time + timedelta(seconds=self.estimated_round_trip_time)
+            self.limit_time = self.start_time + timedelta(seconds=max(0.01, self.estimated_round_trip_time + 4 * self.dev_round_trip_time))
