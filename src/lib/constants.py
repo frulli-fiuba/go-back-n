@@ -21,3 +21,8 @@ ERROR_RECOVERY_PROTOCOL_MAPPING = {
 class ClientMode(Enum):
     UPLOAD = 1
     DOWNLOAD = 2
+
+class ConnectionState(Enum):
+    IDLE = 1
+    ESTABLISHED = 2   
+    CLOSING = 3

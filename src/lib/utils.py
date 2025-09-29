@@ -148,11 +148,13 @@ class Timer:
         with self.lock:
             return bool(self.limit_time)
     
-    def set(self):
+    def set(self, factor: float = 1.0):
         with self.lock:
             now = datetime.now()
+
             if self.start_time:
                 self.estimated_round_trip_time = (1 - 0.125) * self.estimated_round_trip_time + 0.125 * (now - self.start_time).seconds
-            
+                
+            self.estimated_round_trip_time *= factor
             self.start_time = now
             self.limit_time = self.start_time + timedelta(seconds=self.estimated_round_trip_time)

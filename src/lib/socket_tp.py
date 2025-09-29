@@ -1,9 +1,9 @@
 from socket import socket, AF_INET, SOCK_DGRAM
-from .constants import ErrorRecoveryMode
+from .constants import ErrorRecoveryMode , ConnectionState
 from .utils import Packet, Window, Timer, Sequence, validate_type, build_syn_payload, parse_syn_payload
 import queue
 import logging
-from threading import Thread
+from threading import Thread, Condition
 from time import sleep
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -34,9 +34,12 @@ class SocketTP:
         self.connection_being_accepted = None
         self.connection_accepted = False
         self.repeat_threshold = 0
-        self.fin_sent = False
+        self.connection_state = ConnectionState.IDLE
+        self.closing_thread = Thread(target = self._passive_close)
+        self.control_condition = Condition()
+        self.fin_received = False
         self.fin_acked = False
-        self.peer_fin_ack_sent = False
+        self.send_ack = False
 
     def __enter__(self):
         return self
@@ -87,41 +90,73 @@ class SocketTP:
     def _process_timer(self):
         while not self.end_connection:
             if self.timer.is_expired():
-                logger.debug('Time out: Packet Lost')
-                self._reset()
+                if self.connection_state != ConnectionState.CLOSING:
+                    logger.debug('Time out: Packet Lost')
+                    self._reset()
+                else:
+                    with self.control_condition:
+                        self.control_condition.notify_all()   
             sleep(0.01)
 
+  
+
     def _process_incoming(self):
+        self.connection_state = ConnectionState.ESTABLISHED
         self.socket.settimeout(self.SOCKET_TIMEOUT)
         repeated_ack = defaultdict(int)
         while not self.end_connection:
-            if self.fin_acked and self.peer_fin_ack_sent:
-                self.end_connection = True
-                continue
             try:
                 data, addr = self.socket.recvfrom(self.PACKET_DATA_SIZE + 7) # el tamanio maximo de datos mas los flags
                 packet = Packet.from_bytes(data)
-                if packet.syn and not self.end_connection:
-                    self._process_syn(addr, packet)
-                elif packet.fin:
-                    self._process_fin()
-                elif packet.ack:
-                    if not self.fin_sent:
-                        self._process_ack(addr, packet, repeated_ack) 
-                    else:
-                        self.fin_acked = True    
-                else:
-                    if packet.seq_number == self.received_ack:
-                        logger.debug(f'{addr} - {packet} - ACCEPTED')
-                        self.received_ack = self.received_ack + len(packet.data)
-                        self.packet_queue.put(packet)
-                    else:
-                        logger.debug(f'{addr} - {packet} - IGNORED expected: {self.received_ack}')
-
-                    self.socket.sendto(Packet(ack=True, seq_number=self.received_ack).to_bytes(), addr)
+                if self.connection_state == ConnectionState.ESTABLISHED:
+                    self._process_data(addr, packet, repeated_ack)
+                elif self.connection_state == ConnectionState.CLOSING:
+                    self._process_closing_handshake(packet)  
             except Exception:
                 pass
-        self._cleanup()   
+
+        self._cleanup()  
+
+    def _process_data(self, addr: str, packet: Packet, repeated_ack: dict):
+        if packet.syn:  
+            self._process_syn(addr, packet)   
+        elif packet.fin: #and packet.seq_number == self.sequence.send:
+            self.connection_state = ConnectionState.CLOSING    
+            self.closing_thread.start()
+        elif packet.ack:
+
+            self._process_ack(addr, packet, repeated_ack)  
+        else:
+            if packet.seq_number == self.received_ack:
+                logger.debug(f'{addr} - {packet} - ACCEPTED')
+                self.received_ack = self.received_ack + len(packet.data)
+                self.packet_queue.put(packet)
+            else:
+                logger.debug(f'{addr} - {packet} - IGNORED expected: {self.received_ack}')
+
+            self.socket.sendto(Packet(ack=True, seq_number=self.received_ack).to_bytes(), addr)   
+
+
+    def _process_closing_handshake(self, packet: Packet): 
+            if packet.fin:
+                logger.debug("FIN RECEIVED")
+                with self.control_condition:
+                    #if packet.seq_number == self.sequence.send:
+                        if not self.fin_received:
+                            self.fin_received = True
+                            self.control_condition.notify_all() 
+                        else:
+                            self.send_ack = True
+            elif packet.ack:
+                logger.debug("ACK RECEIVED")
+                with self.control_condition:
+                    #if packet.seq_number == self.sequence.send + 1:
+                        self.fin_acked =  True
+                        self.sequence.ack = packet.seq_number
+                        self.sequence.send = packet.seq_number
+                        self.control_condition.notify_all()      
+
+
 
     def bind(self, host: str, port: int):
         validate_type("host", host, str)
@@ -252,35 +287,61 @@ class SocketTP:
         self.window.reset(new_window_size)
         self.repeat_threshold = repeat_threashold
         
-
+            
     def close(self):
-        if self.dest_addr:
-            logger.debug(f"Initiating connection close with {self.dest_addr}")
+        if self.connection_state != ConnectionState.CLOSING:
+            self.connection_state = ConnectionState.CLOSING
+            if self.dest_addr:
+                logger.debug(f"Initiating connection close with {self.dest_addr}")
+                self._send_fin()       
+                if not self.fin_received:
+                    with self.control_condition:          
+                        while not self.fin_received:
+                                self.control_condition.wait(timeout=1)
+                        self.send_ack = True        
+                self._ack_fins()
+            self._join_incoming()
+
+    def _passive_close(self):
+        self.fin_received = True
+        self.send_ack = True
+        self._ack_fins()
+        self._send_fin()
+        self._join_incoming()
+
+
+
+    def _send_fin(self):
+        while not self.fin_acked:
+            self.timer.set()
             fin_packet = Packet(fin=True, seq_number=self.sequence.send)
             self.socket.sendto(fin_packet.to_bytes(), self.dest_addr)
-            self.fin_sent = True
             logger.debug(f'{self.dest_addr} - {fin_packet} - FIN SENT')
-        else: 
-            self.end_connection = True
-            if self.process_incoming_thread.is_alive():
-                self.process_incoming_thread.join()   
+            with self.control_condition:
+                while not self.fin_acked and not self.timer.is_expired():
+                    self.control_condition.wait(timeout = 1)
+        self.timer.stop() 
+    
+    def _ack_fins(self):
+        self.timer.set(2) #TIME WAIT 2 * RTT
+        with self.control_condition:
+            while not self.timer.is_expired():
+                if self.send_ack:
+                    ack_packet = Packet(ack=True, seq_number=self.sequence.send + 1)
+                    self.socket.sendto(ack_packet.to_bytes(), self.dest_addr)
+                    logger.debug(f'{self.dest_addr} - {ack_packet} - ACK SENT')
+                    self.send_ack = False 
+                self.control_condition.wait(timeout=1)
 
-  
-
-    def _process_fin(self):
-        ack_packet = Packet(ack=True, seq_number=self.sequence.send + 1)
-        self.socket.sendto(ack_packet.to_bytes(), self.dest_addr)
-        self.peer_fin_ack_sent = True
-        logger.debug(f'{self.dest_addr} - {ack_packet} - FIN ACK SENT')
-        if not self.fin_sent:
-            fin_packet = Packet(fin=True, seq_number=self.sequence.send)
-            self.socket.sendto(fin_packet.to_bytes(), self.dest_addr)
-            self.fin_sent = True
-            logger.debug(f'{self.dest_addr} - {fin_packet} - FIN SENT')
-
+    def _join_incoming(self):
+        self.end_connection = True
+        if self.process_incoming_thread.is_alive():
+            self.process_incoming_thread.join() 
+        else:
+            self._cleanup()    
+              
 
     def _cleanup(self):
-        """Clean up resources"""
         if self.timer_thread.is_alive():
             self.timer_thread.join(timeout=1)
         
