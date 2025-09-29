@@ -300,7 +300,7 @@ class SocketTP:
                                 self.control_condition.wait(timeout=1)
                         self.send_ack = True        
                 self._ack_fins()
-            self._join_incoming()
+        self._join_incoming()
 
     def _passive_close(self):
         self.fin_received = True
