@@ -26,7 +26,8 @@ def run():
     net.start()
 
     h1 = net.get('h1')
-
+    
+    makeTerm(h1, cmd='wireshark -i h1-eth0')
     makeTerm(h1, cmd='python3 start-server.py -v -s ../assets -H 10.0.0.1')
 
     from mininet.term import makeTerms
