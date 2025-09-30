@@ -3,7 +3,7 @@ from .constants import ErrorRecoveryMode
 from .utils import Packet, Window, Timer, Sequence, validate_type, build_syn_payload, parse_syn_payload
 import queue
 import logging
-from threading import Thread
+from threading import Thread, Condition
 from time import sleep
 from datetime import datetime, timedelta
 
@@ -14,6 +14,7 @@ logger = logging.getLogger("socket")
 class SocketTP:
     PACKET_DATA_SIZE = 1400
     CONNECTION_TIMEOUT = 30
+    RESEND_LIMIT = 5
     SOCKET_TIMEOUT = 1
     GO_BACK_N_WINDOW = 5 * PACKET_DATA_SIZE
 
@@ -32,6 +33,8 @@ class SocketTP:
         self.received_ack = 0
         self.connection_being_accepted = None
         self.connection_accepted = False
+        self.fin_acked = False
+        self.fin_acked_condition = Condition
 
     def __enter__(self):
         return self
@@ -91,6 +94,14 @@ class SocketTP:
                 packet = Packet.from_bytes(data)
                 if packet.syn:
                     self._process_syn(addr, packet)
+                elif packet.fin:
+                    if packet.ack:
+                        with self.fin_acked_condition:
+                            self.fin_acked = True
+                            self.fin_acked_condition.notify_all()
+                    else:
+                        self.socket.sendto(Packet(ack=True, fin=True).to_bytes(), self.addr)
+                        self.end_connection = True
                 elif packet.ack and addr == self.dest_addr:
                     self._process_ack(addr, packet)
                 else:
@@ -262,9 +273,13 @@ class SocketTP:
         
         self.window.reset(new_window_size)
 
-    #TODO add close flux
     def close(self):
-        sleep(1) # por si quedan packetes pendientes de ack
+        resends = 0
+        if self.dest_addr:
+            with self.fin_acked_condition:
+                while resends < self.RESEND_LIMIT or self.fin_acked:
+                    self.socket.sendto(Packet(fin=True).to_bytes(), self.dest_addr)
+                    self.fin_acked_condition.wait(timeout=1)
         self.end_connection = True
         self.socket.close()
         self.process_incoming_thread.join()
