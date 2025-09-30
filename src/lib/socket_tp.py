@@ -33,9 +33,7 @@ class SocketTP:
         self.received_ack = 0
         self.connection_being_accepted = None
         self.connection_accepted = False
-        self.fin_acked = False
-        self.fin_acked_condition = Condition()
-
+        self.fin_received = False
     def __enter__(self):
         return self
 
@@ -95,13 +93,8 @@ class SocketTP:
                 if packet.syn:
                     self._process_syn(addr, packet)
                 elif packet.fin:
-                    if packet.ack:
-                        with self.fin_acked_condition:
-                            self.fin_acked = True
-                            self.fin_acked_condition.notify_all()
-                            logger.debug(f"{self.dest_addr} - FIN ACK - RECEIVED")
-                    else:
-                        self.end_connection = True
+                    self.end_connection = True
+                    self.fin_received = True
                 elif packet.ack and addr == self.dest_addr:
                     self._process_ack(addr, packet)
                 else:
@@ -274,21 +267,31 @@ class SocketTP:
         
         self.window.reset(new_window_size)
 
-    def close(self):
-        if self.dest_addr:
-            if self.end_connection:
-                self.socket.sendto(Packet(ack=True, fin=True).to_bytes(), self.addr)
-                logger.debug(f"{self.dest_addr} - FIN ACK - SENT") 
-            else:
-                resends = 0
-                with self.fin_acked_condition:
-                    while resends < self.RESEND_LIMIT or self.fin_acked:
-                        self.socket.sendto(Packet(fin=True).to_bytes(), self.dest_addr)
-                        logger.debug(f"{self.dest_addr} - FIN - SENT")
-                        resends += 1
-                        self.fin_acked_condition.wait(timeout=1)
-                self.end_connection = True 
 
-        self.socket.close()
+    def close(self):
+        self.end_connection = True
         self.process_incoming_thread.join()
+        if self.dest_addr:
+            resend = 0
+            peer_fin_acked = False
+            while resend < self.RESEND_LIMIT:
+                if not fin_acked:
+                    self.socket.sendto(Packet(fin=True).to_bytes(), self.dest_addr)
+                    logger.debug(f"{self.dest_addr} - FIN - SENT")
+                    resend+=1
+                try:
+                    data, _ = self.socket.recvfrom(self.PACKET_DATA_SIZE)
+                    packet = Packet.from_bytes(data)
+                    if packet.ack:
+                        fin_acked = True
+                    if packet.fin:
+                        self.fin_received = True
+                        self.socket.sendto(Packet(ack=True).to_bytes(), self.dest_addr)
+                        logger.debug(f"{self.dest_addr} - FIN - SENT")
+                        resend+=1
+                except:
+                    if self.fin_received and fin_acked:
+                        break
+                    continue
+        self.socket.close()
         self.timer_thread.join()
