@@ -35,6 +35,11 @@ def parse_syn_payload(data: bytes) -> Tuple[ErrorRecoveryMode]:
 
 
 class Packet:
+    ACK = 0b001
+    SYN = 0b010
+    FIN = 0b100
+    HEADER_SIZE = 5
+
     def __init__(self, data: bytes = b'', seq_number: int = 0, ack: bool = False, syn: bool = False, fin: bool = False):
         self.data = data
         self.seq_number = seq_number
@@ -43,15 +48,23 @@ class Packet:
         self.fin = fin
     
     def to_bytes(self) -> bytes:
-        return self.seq_number.to_bytes(4, "big") + self.ack.to_bytes(1, "big") + self.syn.to_bytes(1, "big") + self.fin.to_bytes(1, "big") + self.data
+        flags = 0b0000
+        if self.ack:
+            flags = flags | self.ACK
+        if self.syn:
+            flags = flags | self.SYN
+        if self.fin:
+            flags = flags | self.FIN
+        
+        return self.seq_number.to_bytes(4, "big") + flags.to_bytes(1, "big") + self.data
     
-    @staticmethod
-    def from_bytes(data: bytes) -> 'Packet':
+    @classmethod
+    def from_bytes(cls, data: bytes) -> 'Packet':
         seq_number = int.from_bytes(data[:4], "big")
-        ack = bool(data[4])
-        syn = bool(data[5])
-        fin = bool(data[6])
-        data = data[7:]
+        ack = bool(data[4] & cls.ACK)
+        syn = bool(data[4] & cls.SYN)
+        fin = bool(data[4] & cls.FIN)
+        data = data[5:]
         return Packet(data=data, seq_number=seq_number, ack=ack, syn=syn, fin=fin)
     
     def __str__(self) -> str:
@@ -135,7 +148,7 @@ class Timer:
         self.start_time = None
         self.limit_time = None
         self.estimated_round_trip_time = 0.5
-        self.dev_round_trip_time = 0.15
+        self.dev_round_trip_time = 0.125
         self.lock = Lock()
         self.alpha = 0.125
         self.beta = 0.25
