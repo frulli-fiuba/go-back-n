@@ -274,12 +274,14 @@ class SocketTP:
         self.window.reset(new_window_size)
 
     def close(self):
-        resends = 0
         if self.dest_addr:
+            resends = 0
             with self.fin_acked_condition:
                 while resends < self.RESEND_LIMIT or self.fin_acked:
                     self.socket.sendto(Packet(fin=True).to_bytes(), self.dest_addr)
+                    resends += 1
                     self.fin_acked_condition.wait(timeout=1)
+
         self.end_connection = True
         self.socket.close()
         self.process_incoming_thread.join()
