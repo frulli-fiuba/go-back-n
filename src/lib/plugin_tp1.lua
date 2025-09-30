@@ -10,13 +10,16 @@ local f_syn = ProtoField.bool("protocolo_tp1.syn", "SYN", nil, { "SYN", "Not a S
 local f_fin = ProtoField.bool("protocolo_tp1.fin", "FIN", nil, { "FIN", "Not a FIN" })
 local f_datasize = ProtoField.uint32("protocolo_tp1.datasize", "Data Size", base.DEC)
 local f_payload = ProtoField.bytes("protocolo_tp1.payload", "Payload")
-local f_handshake_mode = ProtoField.uint32("protocolo_tp1.handshake.mode", "Error Recovery Mode", base.DEC)
+local f_handshake_mode = ProtoField.uint32("protocolo_tp1.handshake.mode", "Error Recovery Mode", base.DEC, {
+    [1] = "GO_BACK_N",
+    [2] = "STOP_AND_WAIT"
+})
 
 -- Añado los campos al protocolo
 protocolo_tp1.fields = { f_seq_number, f_ack, f_syn, f_fin, f_datasize, f_payload, f_handshake_mode }
 
 function protocolo_tp1.dissector(buffer, pinfo, tree)
-    local HEADER_SIZE = 7
+    local HEADER_SIZE = 7  -- 4 bytes seq_number + 3 bytes flags
     if buffer:len() < HEADER_SIZE then
         return
     end
@@ -33,9 +36,13 @@ function protocolo_tp1.dissector(buffer, pinfo, tree)
     local ack_byte = buffer:range(offset, 1)
     local syn_byte = buffer:range(offset + 1, 1)
     local fin_byte = buffer:range(offset + 2, 1)
-    subtree:add(f_ack, ack_byte, ack_byte:uint() ~= 0)
-    subtree:add(f_syn, syn_byte, syn_byte:uint() ~= 0)
-    subtree:add(f_fin, fin_byte, fin_byte:uint() ~= 0)
+    local ack_flag = ack_byte:uint() ~= 0
+    local syn_flag = syn_byte:uint() ~= 0
+    local fin_flag = fin_byte:uint() ~= 0
+    
+    subtree:add(f_ack, ack_byte, ack_flag)
+    subtree:add(f_syn, syn_byte, syn_flag)
+    subtree:add(f_fin, fin_byte, fin_flag)
     offset = offset + 3
 
     local payload_size = buffer:len() - offset
@@ -43,11 +50,43 @@ function protocolo_tp1.dissector(buffer, pinfo, tree)
         local payload_buffer = buffer:range(offset, payload_size)
         subtree:add(f_datasize, payload_size)
         
-        if syn_byte:uint() ~= 0 and seq_number == 0 then
-            subtree:add(f_handshake_mode, payload_buffer)
+        -- Si es un SYN inicial (SYN=1, seq_number=0), decodificar el modo
+        if syn_flag and seq_number == 0 and payload_size >= 4 then
+            local mode_value = payload_buffer:range(0, 4):uint()
+            local mode_tree = subtree:add(f_handshake_mode, payload_buffer:range(0, 4), mode_value)
+            
+            -- Agregar texto descriptivo al árbol
+            local mode_name = "UNKNOWN"
+            if mode_value == 1 then
+                mode_name = "GO_BACK_N"
+            elseif mode_value == 2 then
+                mode_name = "STOP_AND_WAIT"
+            end
+            mode_tree:append_text(" (" .. mode_name .. ")")
         else
             subtree:add(f_payload, payload_buffer)
         end
+    end
+    
+    -- Información adicional en la columna de info
+    local info = ""
+    if syn_flag then info = info .. "SYN " end
+    if ack_flag then info = info .. "ACK " end
+    if fin_flag then info = info .. "FIN " end
+    if info ~= "" then
+        pinfo.cols.info:set(info .. "Seq=" .. seq_number)
+    end
+    
+    -- Agregar protocolo al final si es handshake
+    if syn_flag and seq_number == 0 and (buffer:len() - 7) >= 4 then
+        local mode_value = buffer:range(7, 4):uint()
+        local mode_name = "UNKNOWN"
+        if mode_value == 1 then
+            mode_name = "GO_BACK_N"
+        elseif mode_value == 2 then
+            mode_name = "STOP_AND_WAIT"
+        end
+        pinfo.cols.info:append(" [" .. mode_name .. "]")
     end
 end
 
@@ -57,26 +96,11 @@ local function tp1_packet_detector(buffer, pinfo, tree)
         return false
     end
 
-
-    local src_ip = tostring(pinfo.src)
-    local dst_ip = tostring(pinfo.dst)
-    local valid_ips = {"10.0.0.1", "10.0.0.2", "10.0.0.3"}
-    
-    local src_valid = false
-    local dst_valid = false
-    for _, ip in ipairs(valid_ips) do
-        if src_ip == ip then src_valid = true end
-        if dst_ip == ip then dst_valid = true end
-    end
-    
-    if not (src_valid and dst_valid) then
-        return false
-    end
-
+    -- Validar que los flags sean válidos (0 o 1)
     local ack_byte = buffer:range(4,1):uint()
     local syn_byte = buffer:range(5,1):uint()
     local fin_byte = buffer:range(6,1):uint()
-
+    
     if ack_byte > 1 or syn_byte > 1 or fin_byte > 1 then
         return false
     end
@@ -84,7 +108,6 @@ local function tp1_packet_detector(buffer, pinfo, tree)
     protocolo_tp1.dissector(buffer, pinfo, tree)
     return true
 end
-
 
 -- Obtener las tablas de dissectores
 local udp_port = DissectorTable.get("udp.port")
