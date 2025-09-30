@@ -14,11 +14,11 @@ class Single3Topo(Topo):
         s1 = self.addSwitch('s1')
         
         self.addHost(f'h1')
-        self.addLink(f'h1', s1, bw=1000, loss=10)
+        self.addLink(f'h1', s1, bw=100, loss=10)
         
         for i in range(2, 4):
             self.addHost(f'h{i}')
-            self.addLink(f'h{i}', s1, bw=1000, loss=0)
+            self.addLink(f'h{i}', s1, bw=100, loss=0)
 
 def run():
     topo = Single3Topo()
@@ -26,7 +26,8 @@ def run():
     net.start()
 
     h1 = net.get('h1')
-
+    
+    makeTerm(h1, cmd='wireshark -i h1-eth0')
     makeTerm(h1, cmd='python3 start-server.py -v -s ../assets -H 10.0.0.1')
 
     from mininet.term import makeTerms

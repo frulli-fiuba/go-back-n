@@ -5,7 +5,6 @@ import queue
 import logging
 from threading import Thread
 from time import sleep
-from collections import defaultdict
 from datetime import datetime, timedelta
 
 
@@ -16,7 +15,7 @@ class SocketTP:
     PACKET_DATA_SIZE = 1400
     CONNECTION_TIMEOUT = 30
     SOCKET_TIMEOUT = 1
-    GO_BACK_N_WINDOW = 100 * PACKET_DATA_SIZE
+    GO_BACK_N_WINDOW = 5 * PACKET_DATA_SIZE
 
     def __init__(self):
         self.host = None
@@ -33,7 +32,6 @@ class SocketTP:
         self.received_ack = 0
         self.connection_being_accepted = None
         self.connection_accepted = False
-        self.repeat_threshold = 0
 
     def __enter__(self):
         return self
@@ -64,18 +62,14 @@ class SocketTP:
         self.process_incoming_thread.start()
         self.timer_thread.start()
 
-    def _process_ack(self, addr: str, packet: Packet, repeated_ack: dict):
+    def _process_ack(self, addr: str, packet: Packet):
         logger.debug(f'{packet} - RECEIVED from {addr}')
         if packet.seq_number > self.sequence.ack:
             self.window.increase(packet.seq_number - self.sequence.ack)
             self.sequence.ack = packet.seq_number
-        elif packet.seq_number == self.sequence.ack:
-            repeated_ack[packet.seq_number] += 1
-            if repeated_ack[packet.seq_number] > self.repeat_threshold:
-                logger.debug(f"REPEATED ACK {packet.seq_number}: {repeated_ack[packet.seq_number]} RESENDING")
-                self._reset()
-                repeated_ack[packet.seq_number] = 0 
-    
+            self.timer.update_estimated_round_trip_time()
+            self.timer.stop()
+
     def _reset(self):
         self.sequence.reset()
         self.window.reset()
@@ -86,21 +80,21 @@ class SocketTP:
             if self.timer.is_expired():
                 logger.debug('Time out: Packet Lost')
                 self._reset()
-            sleep(0.01)
-
+            sleep(0.001)
+        
     def _process_incoming(self):
         self.socket.settimeout(self.SOCKET_TIMEOUT)
-        repeated_ack = defaultdict(int)
+
         while not self.end_connection:
             try:
                 data, addr = self.socket.recvfrom(self.PACKET_DATA_SIZE + 7) # el tamanio maximo de datos mas los flags
                 packet = Packet.from_bytes(data)
                 if packet.syn:
                     self._process_syn(addr, packet)
-                elif packet.ack:
-                    self._process_ack(addr, packet, repeated_ack)
+                elif packet.ack and addr == self.dest_addr:
+                    self._process_ack(addr, packet)
                 else:
-                    if packet.seq_number == self.received_ack:
+                    if packet.seq_number == self.received_ack and addr == self.dest_addr:
                         logger.debug(f'{addr} - {packet} - ACCEPTED')
                         self.received_ack = self.received_ack + len(packet.data)
                         self.packet_queue.put(packet)
@@ -116,16 +110,45 @@ class SocketTP:
         validate_type("port", port, int)
         self.host = host
         self.socket.bind((host, port))
- 
+    
+    def get_incomming_connection(self):
+        addr = None
+        mode = None
+        
+        while not self.end_connection and not addr:
+            try:
+                addr, mode = self.connection_queue.get(timeout=2)
+            except:
+                # intentamos tomar una conexion entrante,
+                # si en 2 segundos no aparecio ninguna chequeamos si se cerro el socket,
+                # si no se cerro intentamos 2 segundos mas, asi hasta q aparezca algo
+                # o se cierre el socket
+                continue
+        
+        if self.end_connection:
+            raise Exception("Socket Closed")
+        
+        return addr, mode
+
     def accept(self) -> 'SocketTP':
-        addr, mode = self.connection_queue.get()
+        addr = None
+        mode = None
+        
+        addr, mode = self.get_incomming_connection()
+        
         self.connection_being_accepted = addr
         
         socket_connection = socket(AF_INET, SOCK_DGRAM)
         socket_connection.bind((self.host, 0))
         socket_connection.settimeout(self.SOCKET_TIMEOUT)
-
+        
+        time_limit = datetime.now() + timedelta(seconds=self.CONNECTION_TIMEOUT)
         while self.connection_being_accepted:
+            if datetime.now() > time_limit:
+                # si hay timeout buscamos otra conexion entrante
+                addr, mode = self.get_incomming_connection()
+                self.connection_being_accepted = addr
+                time_limit = datetime.now() + timedelta(seconds=self.CONNECTION_TIMEOUT)
             try:
                 socket_connection.sendto(Packet(syn=True, ack=True).to_bytes(), addr)
                 data, recv_addr = socket_connection.recvfrom(self.PACKET_DATA_SIZE)
@@ -134,8 +157,10 @@ class SocketTP:
                 if recv_addr == addr and packet.ack:
                     self.connection_being_accepted = None
             except:
+                # no recibimos nada del socket abierto, 
+                # seguimos esperando hasta el timeout antes de descartarla y buscar otra
                 pass
- 
+        
         new_socket = SocketTP()
 
         new_socket.socket = socket_connection
@@ -180,27 +205,26 @@ class SocketTP:
         fin = False
         time_limit = datetime.now() + timedelta(seconds=self.CONNECTION_TIMEOUT)
         last_ack = None
-        while not fin:
+        while not fin and not self.end_connection:
             if datetime.now() > time_limit:
                 raise Exception("TIME OUT")
             start = sequence - offset
             end = start + min(self.PACKET_DATA_SIZE, self.window.size, len(data[start:]))
             if data[start: end]:
+                if self.sequence.are_equal():
+                    self.timer.set()
+
                 packet = Packet(data=data[start: end], seq_number=sequence)
                 self.socket.sendto(packet.to_bytes(), self.dest_addr)
                 
                 logger.debug(f'{self.dest_addr} - {packet} - SENT')
-                
-                if self.sequence.are_equal():
-                    self.timer.set()
                 
                 self.window.decrease(len(data[start: end]))
             else:
                 if not self.timer.is_set():
                     self.timer.set()
                 with self.window.empty_window: # esperamos hasta q tengamos lugar en la ventana
-                    if not self.window.empty_window.wait(timeout=self.CONNECTION_TIMEOUT):
-                        raise Exception("TIME OUT")
+                    self.window.empty_window.wait(timeout=self.timer.estimated_round_trip_time)
             
             with self.sequence.lock:
                 if sequence > self.sequence._send:
@@ -218,7 +242,7 @@ class SocketTP:
         validate_type("size", size, int)
         buffer = b''
         started = datetime.now()
-        while True:
+        while not self.end_connection:
             try:
                 packet = self.packet_queue.get(timeout=self.CONNECTION_TIMEOUT)
             except queue.Empty:
@@ -231,14 +255,12 @@ class SocketTP:
 
     def _set_error_recovery_mode(self, mode: ErrorRecoveryMode):
         new_window_size = self.GO_BACK_N_WINDOW
-        repeat_threashold = 2
+
         if mode == ErrorRecoveryMode.STOP_AND_WAIT:
             # mandamos un solo paquete y esperamos ack
             new_window_size = self.PACKET_DATA_SIZE 
-            repeat_threashold = 0
         
         self.window.reset(new_window_size)
-        self.repeat_threshold = repeat_threashold
 
     #TODO add close flux
     def close(self):

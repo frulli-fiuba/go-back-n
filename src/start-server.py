@@ -1,3 +1,6 @@
+import sys
+import tty
+import termios
 import os
 import argparse
 import logging
@@ -7,11 +10,31 @@ from lib.constants import DEFAULT_HOST, DEFAULT_PORT, ClientMode, FILE_NOT_FOUND
 from lib.validations import server_validations
 from lib.socket_tp import SocketTP
 from lib.file_transfer import send_file, recv_file
+import select
 
 logging.config.fileConfig("./lib/logging.conf")
 
 logger = logging.getLogger(__name__)
 
+
+def wait_for_close(socket):
+    logger.info("Presionar 'q' para cerrar el servidor")
+
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)
+        key_pressed = ''
+        while key_pressed.lower() != 'q':
+            rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
+            if rlist:
+                key_pressed = sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    socket.close()
+    logger.info("Servidor cerrado.")
+    
 
 def handle_client(socket: SocketTP, storage_dir: str):
     try:
@@ -72,13 +95,19 @@ def main():
     s.bind(args.host, args.port)
     s.listen()
     threads = []
-    while True:
-        new_socket = s.accept()
-        thread = Thread(target=handle_client, args=(new_socket, args.storage))
-        thread.start()
-        threads.append(thread)
-    
-    s.close()
+    close_thread = Thread(target=wait_for_close, args=(s,))
+    close_thread.start()
+    try:
+        while new_socket := s.accept():
+            thread = Thread(target=handle_client, args=(new_socket, args.storage))
+            thread.start()
+            threads.append(thread)
+    except Exception:
+        logger.info("Cerrando servidor")
 
+    close_thread.join()
+    for thread in threads:
+        thread.join()
+    
 if __name__ == '__main__':
     main()
