@@ -272,13 +272,13 @@ class SocketTP:
         self.end_connection = True
         self.process_incoming_thread.join()
         if self.dest_addr:
-            resend = 0
+            i = 0
             peer_fin_acked = False
-            while resend < self.RESEND_LIMIT:
+            while i < self.RESEND_LIMIT:
+                i+=1
                 if not fin_acked:
                     self.socket.sendto(Packet(fin=True).to_bytes(), self.dest_addr)
-                    logger.debug(f"{self.dest_addr} - FIN - SENT")
-                    resend+=1
+                    logger.debug(f"{self.dest_addr} - FIN - SENT")    
                 try:
                     data, _ = self.socket.recvfrom(self.PACKET_DATA_SIZE)
                     packet = Packet.from_bytes(data)
@@ -288,7 +288,6 @@ class SocketTP:
                         self.fin_received = True
                         self.socket.sendto(Packet(ack=True).to_bytes(), self.dest_addr)
                         logger.debug(f"{self.dest_addr} - FIN - SENT")
-                        resend+=1
                 except:
                     if self.fin_received and fin_acked:
                         break
