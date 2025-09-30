@@ -34,7 +34,7 @@ class SocketTP:
         self.connection_being_accepted = None
         self.connection_accepted = False
         self.fin_acked = False
-        self.fin_acked_condition = Condition
+        self.fin_acked_condition = Condition()
 
     def __enter__(self):
         return self
@@ -99,8 +99,10 @@ class SocketTP:
                         with self.fin_acked_condition:
                             self.fin_acked = True
                             self.fin_acked_condition.notify_all()
+                            logger.debug(f"{self.dest_addr} - FIN ACK - RECEIVED")
                     else:
                         self.socket.sendto(Packet(ack=True, fin=True).to_bytes(), self.addr)
+                        logger.debug(f"{self.dest_addr} - FIN ACK - SENT")
                         self.end_connection = True
                 elif packet.ack and addr == self.dest_addr:
                     self._process_ack(addr, packet)
@@ -279,9 +281,9 @@ class SocketTP:
             with self.fin_acked_condition:
                 while resends < self.RESEND_LIMIT or self.fin_acked:
                     self.socket.sendto(Packet(fin=True).to_bytes(), self.dest_addr)
+                    logger.debug(f"{self.dest_addr} - FIN - SENT")
                     resends += 1
                     self.fin_acked_condition.wait(timeout=1)
-
         self.end_connection = True
         self.socket.close()
         self.process_incoming_thread.join()
