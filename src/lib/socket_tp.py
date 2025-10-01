@@ -276,7 +276,7 @@ class SocketTP:
             self.process_incoming_thread.join()
             if self.dest_addr:
                 i = 0
-                peer_fin_acked = False
+                fin_acked = False
                 while i < self.RESEND_LIMIT:
                     i+=1
                     if not fin_acked:
