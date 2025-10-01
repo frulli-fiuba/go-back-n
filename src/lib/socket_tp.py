@@ -290,7 +290,7 @@ class SocketTP:
                         if packet.fin:
                             self.fin_received = True
                             self.socket.sendto(Packet(ack=True).to_bytes(), self.dest_addr)
-                            logger.debug(f"{self.dest_addr} - FIN - SENT")
+                            logger.debug(f"{self.dest_addr} - ACK - SENT")
                     except:
                         if self.fin_received and fin_acked:
                             break
