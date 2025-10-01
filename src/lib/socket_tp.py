@@ -211,7 +211,7 @@ class SocketTP:
             start = sequence - offset
             end = start + min(self.PACKET_DATA_SIZE, self.window.size, len(data[start:]))
             if data[start: end]:
-                if self.sequence.are_equal():
+                if not self.timer.is_set():
                     self.timer.set()
 
                 packet = Packet(data=data[start: end], seq_number=sequence)
