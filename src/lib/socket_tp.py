@@ -96,6 +96,8 @@ class SocketTP:
                 elif packet.fin:
                     self.end_connection = True
                     self.fin_received = True
+                    self.socket.sendto(Packet(ack=True).to_bytes(), self.dest_addr)
+                    logger.debug(f"{self.dest_addr} - ACK - SENT")
                 elif packet.ack and addr == self.dest_addr:
                     self._process_ack(addr, packet)
                 else:
