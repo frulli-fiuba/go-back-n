@@ -281,7 +281,6 @@ class SocketTP:
             time_wait = timedelta(seconds=self.timer.estimated_round_trip_time * 2) #una especie de timewait
             time_limit = datetime.min
             fin_acked = False
-            timeout = True
             for _ in range(self.CLOSING_LOOP_LIMIT):
                 if not fin_acked and datetime.now() > time_limit:
                     self.socket.sendto(Packet(fin=True).to_bytes(), self.dest_addr)
