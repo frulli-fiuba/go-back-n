@@ -14,7 +14,7 @@ logger = logging.getLogger("socket")
 class SocketTP:
     PACKET_DATA_SIZE = 1400
     CONNECTION_TIMEOUT = 30
-    RESEND_LIMIT = 5
+    CLOSING_LOOP_LIMIT = 5
     SOCKET_TIMEOUT = 1
     GO_BACK_N_WINDOW = 5 * PACKET_DATA_SIZE
 
@@ -270,33 +270,38 @@ class SocketTP:
 
 
     def close(self):
-        if not self.closed:
-            self.closed = True
-            self.end_connection = True
-            self.process_incoming_thread.join()
-            if self.dest_addr:
-                i = 0
-                fin_acked = False
-                while i < self.RESEND_LIMIT:
-                    i+=1
-                    if not fin_acked:
-                        self.socket.sendto(Packet(fin=True).to_bytes(), self.dest_addr)
-                        logger.debug(f"{self.dest_addr} - FIN - SENT")    
-                    try:
-                        data, _ = self.socket.recvfrom(self.PACKET_DATA_SIZE)
-                        packet = Packet.from_bytes(data)
-                        if packet.ack:
-                            fin_acked = True
-                            logger.debug(f"{self.dest_addr} - ACK - RECEIVED") 
-                        if packet.fin:
-                            self.fin_received = True
-                            logger.debug(f"{self.dest_addr} - FIN - RECEIVED") 
-                            self.socket.sendto(Packet(ack=True).to_bytes(), self.dest_addr)
-                            logger.debug(f"{self.dest_addr} - ACK - SENT")
-                    except:
-                        if self.fin_received and fin_acked:
-                            break
-                        continue
-            self.socket.close()
-            self.timer_thread.join()
+        if self.closed:
+            return    
+        self.closed = True
+        self.end_connection = True
+        self.process_incoming_thread.join()
+        self.timer_thread.join()  
+        if self.dest_addr:
+            #se podrian hacer chequeos de sequence number para emular tcp, aunque no traeria ningun beneficio real a este cierre
+            time_wait = timedelta(seconds=self.timer.estimated_round_trip_time * 2) #una especie de timewait
+            time_limit = datetime.min
+            fin_acked = False
+            timeout = True
+            for _ in range(self.CLOSING_LOOP_LIMIT):
+                if not fin_acked and datetime.now() > time_limit:
+                    self.socket.sendto(Packet(fin=True).to_bytes(), self.dest_addr)
+                    logger.debug(f"{self.dest_addr} - FIN - SENT")  
+                    time_limit = datetime.now() + time_wait 
+                try:
+                    data, _ = self.socket.recvfrom(self.PACKET_DATA_SIZE)
+                    packet = Packet.from_bytes(data)
+                    if packet.ack:
+                        fin_acked = True
+                        logger.debug(f"{self.dest_addr} - ACK - RECEIVED") 
+                    if packet.fin:
+                        self.fin_received = True
+                        logger.debug(f"{self.dest_addr} - FIN - RECEIVED") 
+                        self.socket.sendto(Packet(ack=True).to_bytes(), self.dest_addr)
+                        logger.debug(f"{self.dest_addr} - ACK - SENT")  
+                except TimeoutError:
+                    if self.fin_received and fin_acked:
+                        break
+                    continue      
+        self.socket.close()
+
 
