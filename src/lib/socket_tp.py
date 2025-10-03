@@ -15,6 +15,7 @@ class SocketTP:
     PACKET_DATA_SIZE = 1400
     CONNECTION_TIMEOUT = 30
     CLOSING_LOOP_LIMIT = 5
+    TIME_WAIT_FACTOR = 4 #puede ser mucho
     SOCKET_TIMEOUT = 1
     GO_BACK_N_WINDOW = 5 * PACKET_DATA_SIZE
 
@@ -94,6 +95,7 @@ class SocketTP:
                 if packet.syn:
                     self._process_syn(addr, packet)
                 elif packet.fin:
+                    logger.debug(f"{self.dest_addr} - FIN - RECEIVED") 
                     self.end_connection = True
                     self.fin_received = True
                     self.socket.sendto(Packet(ack=True).to_bytes(), self.dest_addr)
@@ -279,9 +281,10 @@ class SocketTP:
         self.process_incoming_thread.join()
         self.timer_thread.join()  
         if self.dest_addr:
-            #se podrian hacer chequeos de sequence number para emular tcp, aunque no traeria ningun beneficio real a este cierre
-            time_wait = timedelta(seconds=self.timer.estimated_round_trip_time * 2) #una especie de timewait
-            time_limit = datetime.min
+            t = max(self.timer.estimated_round_trip_time * self.RESEND_FACTOR, 0.02)
+            time_wait = timedelta(seconds = t)
+            socket.settimeout(t * self.TIME_WAIT_FACTOR)
+            time_limit = datetime.now()
             fin_acked = False
             for _ in range(self.CLOSING_LOOP_LIMIT):
                 if not fin_acked and datetime.now() > time_limit:
