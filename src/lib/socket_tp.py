@@ -305,6 +305,7 @@ class SocketTP:
                         break
                     continue
             
+            self.socket.settimeout(0.02)
             time_wait = t * self.TIME_WAIT_FACTOR
             time_delta = timedelta(seconds=time_wait)
             time_limit = datetime.now() + time_delta
