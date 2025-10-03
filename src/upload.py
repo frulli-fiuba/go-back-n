@@ -1,9 +1,11 @@
 import argparse
+from datetime import datetime
 import logging
 import logging.config
 from lib.file_transfer import send_file
 from lib.validations import upload_validations
 from lib.constants import ERROR_RECOVERY_PROTOCOL_MAPPING, DEFAULT_HOST, DEFAULT_PORT, ClientMode
+import time
 
 logging.config.fileConfig("./lib/logging.conf")
 
@@ -45,10 +47,17 @@ def main():
         s.sendall(len(name_b).to_bytes(4, "big"))
         s.sendall(name_b)
 
+        start_time = time.time()
+        start_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        logger.info(f"=== INICIO DE TRANSFERENCIA === [{start_datetime}]")
+        
         send_file(s, args.src)
-
-        logger.info("Fin de la subida, cerrando socket.")
-    
+        
+        elapsed_time = time.time() - start_time
+        end_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        logger.info(f"=== FIN DE TRANSFERENCIA === [{end_datetime}]")
+        logger.info(f"Tiempo transcurrido: {elapsed_time:.2f} segundos. Cerrando socket.")
 
 if __name__ == '__main__':
     main()
