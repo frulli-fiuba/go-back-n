@@ -282,15 +282,15 @@ class SocketTP:
         self.timer_thread.join()  
         if self.dest_addr:
             t = max(self.timer.estimated_round_trip_time * self.RESEND_FACTOR, 0.02)
-            time_wait = timedelta(seconds = t)
-            socket.settimeout(t * self.TIME_WAIT_FACTOR)
+            time_delta = timedelta(seconds = t)
+            self.socket.settimeout(t)
             time_limit = datetime.now()
             fin_acked = False
             for _ in range(self.CLOSING_LOOP_LIMIT):
                 if not fin_acked and datetime.now() > time_limit:
                     self.socket.sendto(Packet(fin=True).to_bytes(), self.dest_addr)
                     logger.debug(f"{self.dest_addr} - FIN - SENT")  
-                    time_limit = datetime.now() + time_wait 
+                    time_limit = datetime.now() + time_delta
                 try:
                     data, _ = self.socket.recvfrom(self.PACKET_DATA_SIZE)
                     packet = Packet.from_bytes(data)
@@ -299,13 +299,27 @@ class SocketTP:
                         logger.debug(f"{self.dest_addr} - ACK - RECEIVED") 
                     if packet.fin:
                         self.fin_received = True
-                        logger.debug(f"{self.dest_addr} - FIN - RECEIVED") 
-                        self.socket.sendto(Packet(ack=True).to_bytes(), self.dest_addr)
-                        logger.debug(f"{self.dest_addr} - ACK - SENT")  
+                        self._process_fin()  
                 except TimeoutError:
                     if self.fin_received and fin_acked:
                         break
-                    continue      
+                    continue
+            
+            time_wait = t * self.TIME_WAIT_FACTOR
+            time_delta = timedelta(seconds=time_wait)
+            time_limit = datetime.now() + time_delta
+            while time_limit > datetime.now(): #TIME WAIT para packetes tardios
+                try:
+                    data, _ = self.socket.recvfrom(self.PACKET_DATA_SIZE)
+                    packet = Packet.from_bytes(data)
+                    if packet.fin:
+                        self._process_fin()
+                except:
+                    continue         
         self.socket.close()
 
+    def _process_fin(self):
+        logger.debug(f"{self.dest_addr} - FIN - RECEIVED") 
+        self.socket.sendto(Packet(ack=True).to_bytes(), self.dest_addr)
+        logger.debug(f"{self.dest_addr} - ACK - SENT")
 
