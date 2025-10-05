@@ -281,7 +281,7 @@ class SocketTP:
         self.process_incoming_thread.join()
         self.timer_thread.join()  
         if self.dest_addr:
-            t = max(self.timer.estimated_round_trip_time * self.RESEND_FACTOR, 0.02)
+            t = max(self.timer.estimated_round_trip_time * 2 , 0.02)
             time_delta = timedelta(seconds = t)
             self.socket.settimeout(t)
             time_limit = datetime.now()
