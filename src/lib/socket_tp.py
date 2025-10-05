@@ -95,7 +95,6 @@ class SocketTP:
                 if packet.syn:
                     self._process_syn(addr, packet)
                 elif packet.fin:
-                    self.end_connection = True
                     self._process_fin()
                 elif packet.ack and addr == self.dest_addr:
                     self._process_ack(addr, packet)
