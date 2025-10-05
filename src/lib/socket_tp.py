@@ -95,11 +95,8 @@ class SocketTP:
                 if packet.syn:
                     self._process_syn(addr, packet)
                 elif packet.fin:
-                    logger.debug(f"{self.dest_addr} - FIN - RECEIVED") 
                     self.end_connection = True
-                    self.fin_received = True
-                    self.socket.sendto(Packet(ack=True).to_bytes(), self.dest_addr)
-                    logger.debug(f"{self.dest_addr} - ACK - SENT")
+                    self._process_fin()
                 elif packet.ack and addr == self.dest_addr:
                     self._process_ack(addr, packet)
                 else:
@@ -298,7 +295,6 @@ class SocketTP:
                         fin_acked = True
                         logger.debug(f"{self.dest_addr} - ACK - RECEIVED") 
                     if packet.fin:
-                        self.fin_received = True
                         self._process_fin()  
                 except TimeoutError:
                     if self.fin_received and fin_acked:
@@ -320,6 +316,7 @@ class SocketTP:
         self.socket.close()
 
     def _process_fin(self):
+        self.fin_received = True
         logger.debug(f"{self.dest_addr} - FIN - RECEIVED") 
         self.socket.sendto(Packet(ack=True).to_bytes(), self.dest_addr)
         logger.debug(f"{self.dest_addr} - ACK - SENT")
