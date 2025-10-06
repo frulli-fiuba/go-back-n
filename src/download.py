@@ -1,6 +1,8 @@
 import argparse
+from datetime import datetime
 import logging
 import logging.config
+import time
 from lib.socket_tp import SocketTP
 from lib.constants import ERROR_RECOVERY_PROTOCOL_MAPPING, DEFAULT_HOST, DEFAULT_PORT, ClientMode
 from lib.validations import download_validations
@@ -45,8 +47,17 @@ def main():
         s.sendall(len(name_b).to_bytes(4, "big"))
         s.sendall(name_b)
 
+        start_time = time.time()
+        start_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        logger.info(f"=== INICIO DE DESCARGA === [{start_datetime}]")
+        
         recv_file(s, args.dst, args.name)
-        logger.info("Fin de la descarga, cerrando socket.")
+        
+        elapsed_time = time.time() - start_time
+        end_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        logger.info(f"=== FIN DE DESCARGA === [{end_datetime}]")
+        logger.info(f"Tiempo transcurrido: {elapsed_time:.2f} segundos. Cerrando socket.")
 
 
 if __name__ == '__main__':

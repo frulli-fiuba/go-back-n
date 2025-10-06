@@ -35,6 +35,8 @@ def parse_syn_payload(data: bytes) -> Tuple[ErrorRecoveryMode]:
 
 
 class Packet:
+    HEADER_SIZE = 7
+
     def __init__(self, data: bytes = b'', seq_number: int = 0, ack: bool = False, syn: bool = False, fin: bool = False):
         self.data = data
         self.seq_number = seq_number
@@ -135,7 +137,7 @@ class Timer:
         self.start_time = None
         self.limit_time = None
         self.estimated_round_trip_time = 0.5
-        self.dev_round_trip_time = 0.15
+        self.dev_round_trip_time = 0.125
         self.lock = Lock()
         self.alpha = 0.125
         self.beta = 0.25
