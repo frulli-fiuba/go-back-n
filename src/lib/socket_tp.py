@@ -3,7 +3,7 @@ from .constants import ErrorRecoveryMode
 from .utils import Packet, Window, Timer, Sequence, validate_type, build_syn_payload, parse_syn_payload
 import queue
 import logging
-from threading import Thread
+from threading import Thread, Condition
 from time import sleep
 from datetime import datetime, timedelta
 
@@ -14,6 +14,8 @@ logger = logging.getLogger("socket")
 class SocketTP:
     PACKET_DATA_SIZE = 1400
     CONNECTION_TIMEOUT = 30
+    CLOSING_LOOP_LIMIT = 5
+    TIME_WAIT_FACTOR = 4 #puede ser mucho
     SOCKET_TIMEOUT = 1
     GO_BACK_N_WINDOW = 5 * PACKET_DATA_SIZE
 
@@ -32,7 +34,8 @@ class SocketTP:
         self.received_ack = 0
         self.connection_being_accepted = None
         self.connection_accepted = False
-
+        self.fin_received = False
+        self.closed = False
     def __enter__(self):
         return self
 
@@ -91,6 +94,8 @@ class SocketTP:
                 packet = Packet.from_bytes(data)
                 if packet.syn:
                     self._process_syn(addr, packet)
+                elif packet.fin:
+                    self._process_fin()
                 elif packet.ack and addr == self.dest_addr:
                     self._process_ack(addr, packet)
                 else:
@@ -252,6 +257,7 @@ class SocketTP:
             if len(buffer) == size:
                 logger.debug(f"Downloaded in {(datetime.now() - started).seconds / 60} minutes")
                 return buffer
+        raise Exception("CONNECTION CLOSED")   
 
     def _set_error_recovery_mode(self, mode: ErrorRecoveryMode):
         new_window_size = self.GO_BACK_N_WINDOW
@@ -262,10 +268,55 @@ class SocketTP:
         
         self.window.reset(new_window_size)
 
-    #TODO add close flux
+
     def close(self):
-        sleep(1) # por si quedan packetes pendientes de ack
+        if self.closed:
+            return    
+        self.closed = True
         self.end_connection = True
-        self.socket.close()
         self.process_incoming_thread.join()
-        self.timer_thread.join()
+        self.timer_thread.join()  
+        if self.dest_addr:
+            t = max(self.timer.estimated_round_trip_time * 2 , 0.02)
+            time_delta = timedelta(seconds = t)
+            self.socket.settimeout(t)
+            time_limit = datetime.now()
+            fin_acked = False
+            for _ in range(self.CLOSING_LOOP_LIMIT):
+                if not fin_acked and datetime.now() > time_limit:
+                    self.socket.sendto(Packet(fin=True).to_bytes(), self.dest_addr)
+                    logger.debug(f"{self.dest_addr} - FIN - SENT")  
+                    time_limit = datetime.now() + time_delta
+                try:
+                    data, _ = self.socket.recvfrom(self.PACKET_DATA_SIZE)
+                    packet = Packet.from_bytes(data)
+                    if packet.ack:
+                        fin_acked = True
+                        logger.debug(f"{self.dest_addr} - ACK - RECEIVED") 
+                    if packet.fin:
+                        self._process_fin()  
+                except TimeoutError:
+                    if self.fin_received and fin_acked:
+                        break
+                    continue
+            
+            self.socket.settimeout(0.02)
+            time_wait = t * self.TIME_WAIT_FACTOR
+            time_delta = timedelta(seconds=time_wait)
+            time_limit = datetime.now() + time_delta
+            while time_limit > datetime.now(): #TIME WAIT para packetes tardios
+                try:
+                    data, _ = self.socket.recvfrom(self.PACKET_DATA_SIZE)
+                    packet = Packet.from_bytes(data)
+                    if packet.fin:
+                        self._process_fin()
+                except:
+                    continue         
+        self.socket.close()
+
+    def _process_fin(self):
+        self.fin_received = True
+        logger.debug(f"{self.dest_addr} - FIN - RECEIVED") 
+        self.socket.sendto(Packet(ack=True).to_bytes(), self.dest_addr)
+        logger.debug(f"{self.dest_addr} - ACK - SENT")
+
