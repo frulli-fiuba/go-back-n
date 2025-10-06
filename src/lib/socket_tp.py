@@ -36,6 +36,7 @@ class SocketTP:
         self.connection_accepted = False
         self.fin_received = False
         self.closed = False
+    
     def __enter__(self):
         return self
 
@@ -270,6 +271,8 @@ class SocketTP:
 
 
     def close(self):
+        sleep(1) # en caso q falte el ack de algo
+        
         if self.closed:
             return    
         self.closed = True
