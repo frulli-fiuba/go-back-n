@@ -8,14 +8,13 @@ from mininet.log import setLogLevel
 from mininet.cli import CLI
 from mininet.term import makeTerm
 
-
 class Single3Topo(Topo):
     def build(self):
         s1 = self.addSwitch('s1')
         
         self.addHost(f'h1')
         self.addLink(f'h1', s1, bw=100, loss=10)
-        
+
         for i in range(2, 4):
             self.addHost(f'h{i}')
             self.addLink(f'h{i}', s1, bw=100, loss=0)
